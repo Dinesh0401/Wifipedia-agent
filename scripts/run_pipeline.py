@@ -14,13 +14,14 @@
 
 import argparse
 import asyncio
+import concurrent.futures
 import json
 import logging
 import sys
 from datetime import datetime
 from pathlib import Path
 
-from scripts.config import cfg
+from scripts.config import cfg, VALID_MODELS
 from scripts.hotpotqa_loader import HotpotQALoader
 from scripts.metrics import print_metrics
 
@@ -49,6 +50,12 @@ def parse_args():
     )
     p.add_argument("--train", type=int, default=None, help="Max train samples")
     p.add_argument("--test", type=int, default=None, help="Max test samples")
+    p.add_argument(
+        "--model",
+        choices=list(VALID_MODELS),
+        default=None,
+        help="LLM backend to use (overrides ACTIVE_MODEL env var)",
+    )
     p.add_argument("--no-mipro", action="store_true", help="Skip MIPROv2")
     return p.parse_args()
 
@@ -69,26 +76,26 @@ def run_miprov2(train_data, val_data):
 
 # -- Stage 2: ACE Offline ---------------------------------------------------
 
-async def run_ace_offline(test_data):
+async def run_ace_offline(test_data, optimized_program_path=None):
     from scripts.ace_pipeline import ACERunner
 
     logger.info("=" * 60)
     logger.info("STAGE 2: ACE Offline Evaluation")
     logger.info("=" * 60)
-    runner = ACERunner(online_mode=False)
+    runner = ACERunner(online_mode=False, optimized_program_path=optimized_program_path)
     result = await runner.run_offline(test_data)
     return result
 
 
 # -- Stage 3: ACE Online ----------------------------------------------------
 
-async def run_ace_online(test_data):
+async def run_ace_online(test_data, optimized_program_path=None):
     from scripts.ace_pipeline import ACERunner
 
     logger.info("=" * 60)
     logger.info("STAGE 3: ACE Online Evaluation (with Reflection)")
     logger.info("=" * 60)
-    runner = ACERunner(online_mode=True)
+    runner = ACERunner(online_mode=True, optimized_program_path=optimized_program_path)
     result = await runner.run_online(test_data)
     return result
 
@@ -118,6 +125,12 @@ async def run_smoke():
 # -- Main --------------------------------------------------------------------
 
 async def main_async(args):
+    # Override active model if --model flag is provided
+    if args.model:
+        cfg.active_model = args.model
+        logger.info(f"Model backend set to: {cfg.active_model}")
+    logger.info(f"Using model: {cfg.get_display_model_name()}")
+
     if args.task == "smoke":
         await run_smoke()
         return
@@ -130,18 +143,24 @@ async def main_async(args):
     val_data = test_data[: min(20, len(test_data))]
 
     results = {}
+    optimized_program_path = None
 
-    # MIPROv2
+    # MIPROv2 — run in thread pool to avoid blocking the event loop
     if args.task in ("miprov2", "all") and not args.no_mipro:
-        results["miprov2"] = run_miprov2(train_data, val_data)
+        loop = asyncio.get_event_loop()
+        with concurrent.futures.ThreadPoolExecutor() as pool:
+            results["miprov2"] = await loop.run_in_executor(
+                pool, run_miprov2, train_data, val_data
+            )
+        optimized_program_path = results["miprov2"].get("optimized_program_path")
 
-    # ACE Offline
+    # ACE Offline — uses optimized program if MIPROv2 ran
     if args.task in ("ace", "all") and args.mode in ("offline", "both"):
-        results["ace_offline"] = await run_ace_offline(test_data)
+        results["ace_offline"] = await run_ace_offline(test_data, optimized_program_path)
 
-    # ACE Online
+    # ACE Online — uses optimized program if MIPROv2 ran
     if args.task in ("ace", "all") and args.mode in ("online", "both"):
-        results["ace_online"] = await run_ace_online(test_data)
+        results["ace_online"] = await run_ace_online(test_data, optimized_program_path)
 
     # -- Final comparison ----
     print("\n" + "=" * 70)
