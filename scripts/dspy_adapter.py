@@ -82,8 +82,19 @@ class UnifiedDSPyLM(dspy.LM):
 
 
 def configure_dspy(temperature: float = 0.0, max_tokens: int = 512):
-    """Convenience function to configure DSPy globally with the active model backend."""
-    lm = UnifiedDSPyLM(temperature=temperature, max_tokens=max_tokens)
-    dspy.configure(lm=lm)
-    logger.info(f"DSPy configured with {cfg.active_model} backend")
-    return lm
+    """Convenience function to configure DSPy globally with the active model backend.
+
+    If DSPy is already configured (e.g. from another thread), skip
+    reconfiguration to avoid the 'can only be changed by the thread
+    that initially configured it' RuntimeError.
+    """
+    try:
+        lm = UnifiedDSPyLM(temperature=temperature, max_tokens=max_tokens)
+        dspy.configure(lm=lm)
+        logger.info(f"DSPy configured with {cfg.active_model} backend")
+        return lm
+    except RuntimeError as e:
+        if "can only be changed by the thread" in str(e):
+            logger.info(f"DSPy already configured, reusing existing settings")
+            return dspy.settings.lm
+        raise

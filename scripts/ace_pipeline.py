@@ -18,7 +18,7 @@ from scripts.wiki_agent import WikiAgent
 from scripts.wiki_retriever import WikipediaRetriever
 from scripts.llm_client import UnifiedLLMClient
 from scripts.metrics import (
-    exact_match, f1_score, compute_metrics, print_metrics,
+    compute_metrics, print_metrics,
     supporting_fact_f1,
 )
 from scripts.hotpotqa_loader import HotpotQALoader
@@ -181,7 +181,7 @@ class ACERunner:
             )
             record = await agent.run_sample(sample)
 
-            if not record["metrics"]["exact_match"] and reflections < max_ref:
+            if record["metrics"]["f1"] == 0.0 and reflections < max_ref:
                 skill = await self.reflector.reflect(
                     question=sample["question"],
                     gold_answer=sample["answer"],
@@ -194,10 +194,11 @@ class ACERunner:
             record = self._attach_faithfulness_single(record)
             predictions.append(record)
 
-            em = record["metrics"]["exact_match"]
-            f1 = record["metrics"]["f1_score"]
+            prec = record["metrics"]["precision"]
+            rec = record["metrics"]["recall"]
+            f1 = record["metrics"]["f1"]
             logger.info(
-                f"[{i+1}/{len(test_samples)}] EM={int(em)} F1={f1:.2f} "
+                f"[{i+1}/{len(test_samples)}] P={prec:.2f} R={rec:.2f} F1={f1:.2f} "
                 f"faithful={record['ace']['faithful']}"
             )
 
@@ -231,7 +232,7 @@ class ACERunner:
         }
         return record
 
-    # -- Save + summarise ----------------------------------------------------
+    # -- Save + summarise (FINER-ORD JSON schema) -----------------------------
     def _save_and_summarise(
         self, predictions: List[Dict[str, Any]], mode: str
     ) -> Dict[str, Any]:
@@ -249,20 +250,35 @@ class ACERunner:
 
         faithful_vals = [p.get("ace", {}).get("faithful", False) for p in predictions]
         ace_rate = float(np.mean(faithful_vals)) if faithful_vals else 0.0
-        summary["ace_faithfulness"] = {
-            "rate": round(ace_rate, 4),
-            "pct": f"{ace_rate * 100:.1f}%",
-        }
 
+        # FINER-ORD compatible output schema
         full_summary = {
-            "mode": mode,
+            "benchmark": "hotpotqa",
+            "model": cfg.get_display_model_name(),
             "timestamp": timestamp,
-            "n_samples": len(predictions),
-            "metrics": summary,
-            "config": {
-                "model": cfg.get_display_model_name(),
+            "samples_evaluated": len(predictions),
+            "summary_metrics": {
+                "precision_mean": summary["precision_mean"],
+                "precision_min": summary["precision_min"],
+                "precision_max": summary["precision_max"],
+                "recall_mean": summary["recall_mean"],
+                "recall_min": summary["recall_min"],
+                "recall_max": summary["recall_max"],
+                "f1_mean": summary["f1_mean"],
+                "f1_min": summary["f1_min"],
+                "f1_max": summary["f1_max"],
+                "ace_faithfulness": round(ace_rate, 4),
+            },
+            "configuration": {
+                "split": "test",
+                "epochs": 1,
                 "temperature": cfg.temperature,
-                "wiki_top_k": cfg.wiki_top_k,
+                "max_tokens": 2048,
+                "skip_adaptation": False,
+                "split_ratio": 0.8,
+                "online_mode": mode == "online",
+                "prompt_version": "v1",
+                "evaluation_mode": "online" if mode == "online" else "offline_train_test_split",
             },
         }
         summary_path = cfg.output_dir / f"{base}_summary.json"
@@ -287,10 +303,12 @@ async def main(online: bool = False):
         result = await runner.run_online(test)
     else:
         result = await runner.run_offline(test)
+    m = result["summary_metrics"]
     print(f"\nACE benchmark complete.")
-    print(f"  EM  : {result['metrics']['exact_match']['pct']}")
-    print(f"  F1  : {result['metrics']['f1_score']['pct']}")
-    print(f"  ACE : {result['metrics']['ace_faithfulness']['pct']}")
+    print(f"  Precision : {m['precision_mean']}")
+    print(f"  Recall    : {m['recall_mean']}")
+    print(f"  F1        : {m['f1_mean']}")
+    print(f"  Faithful  : {m['ace_faithfulness']}")
 
 
 if __name__ == "__main__":

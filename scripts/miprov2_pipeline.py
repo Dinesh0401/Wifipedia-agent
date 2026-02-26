@@ -15,7 +15,7 @@ from typing import List, Dict, Any
 import dspy
 import numpy as np
 
-from scripts.metrics import exact_match, f1_score, compute_metrics, print_metrics
+from scripts.metrics import token_precision_recall_f1, f1_score, compute_metrics, print_metrics
 from scripts.hotpotqa_loader import HotpotQALoader
 from scripts.wiki_retriever import WikipediaRetriever
 from scripts.dspy_adapter import configure_dspy
@@ -132,13 +132,25 @@ class MIPROv2Optimizer:
         logger.info(f"Optimised program saved -> {out_path}")
 
         val_metrics = {}
+        summary_metrics = {}
         if val_dspy:
             val_metrics = self._evaluate_program(optimized, val_dspy)
             print_metrics(val_metrics)
+            summary_metrics = {
+                "precision_mean": val_metrics["precision_mean"],
+                "precision_min": val_metrics["precision_min"],
+                "precision_max": val_metrics["precision_max"],
+                "recall_mean": val_metrics["recall_mean"],
+                "recall_min": val_metrics["recall_min"],
+                "recall_max": val_metrics["recall_max"],
+                "f1_mean": val_metrics["f1_mean"],
+                "f1_min": val_metrics["f1_min"],
+                "f1_max": val_metrics["f1_max"],
+            }
 
         return {
             "optimized_program_path": str(out_path),
-            "val_metrics": val_metrics,
+            "summary_metrics": summary_metrics,
             "timestamp": timestamp,
         }
 
@@ -150,12 +162,11 @@ class MIPROv2Optimizer:
         for ex in examples:
             try:
                 pred = program(question=ex.question, context=ex.context)
-                em = exact_match(pred.answer, ex.answer)
-                f1 = f1_score(pred.answer, ex.answer)
-                records.append({"exact_match": em, "f1_score": f1})
+                prec, rec, f1 = token_precision_recall_f1(pred.answer, ex.answer)
+                records.append({"precision": prec, "recall": rec, "f1": f1})
             except Exception as e:
                 logger.warning(f"Evaluation step failed: {e}")
-                records.append({"exact_match": False, "f1_score": 0.0})
+                records.append({"precision": 0.0, "recall": 0.0, "f1": 0.0})
         return compute_metrics(records, split="val")
 
 
@@ -169,11 +180,11 @@ def main():
     result = optimizer.run(train_samples=train, val_samples=val)
     print(f"\nMIPROv2 optimisation complete.")
     print(f"  Saved to : {result['optimized_program_path']}")
-    if result["val_metrics"]:
-        em = result["val_metrics"]["exact_match"]["pct"]
-        f1 = result["val_metrics"]["f1_score"]["pct"]
-        print(f"  Val EM   : {em}")
-        print(f"  Val F1   : {f1}")
+    if result["summary_metrics"]:
+        m = result["summary_metrics"]
+        print(f"  Val Precision : {m['precision_mean']}")
+        print(f"  Val Recall    : {m['recall_mean']}")
+        print(f"  Val F1        : {m['f1_mean']}")
 
 
 if __name__ == "__main__":

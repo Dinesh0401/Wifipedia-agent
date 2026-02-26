@@ -12,7 +12,7 @@ from typing import List, Dict, Any, Optional
 
 from scripts.wiki_retriever import WikipediaRetriever
 from scripts.llm_client import UnifiedLLMClient
-from scripts.metrics import exact_match, f1_score, supporting_fact_f1
+from scripts.metrics import token_precision_recall_f1, supporting_fact_f1
 from scripts.config import cfg
 
 logger = logging.getLogger(__name__)
@@ -85,8 +85,7 @@ class WikiAgent:
         context = self.retriever.build_context(docs)
         prediction = await self._reason(question, context)
 
-        em = exact_match(prediction["answer"], gold_ans)
-        f1 = f1_score(prediction["answer"], gold_ans)
+        prec, rec, f1 = token_precision_recall_f1(prediction["answer"], gold_ans)
         sf_f1 = supporting_fact_f1(
             prediction.get("used_titles", []), gold_facts
         )
@@ -107,8 +106,9 @@ class WikiAgent:
             },
             "prediction": prediction,
             "metrics": {
-                "exact_match": em,
-                "f1_score": f1,
+                "precision": prec,
+                "recall": rec,
+                "f1": f1,
                 "supporting_fact_f1": sf_f1,
             },
         }
@@ -125,11 +125,12 @@ class WikiAgent:
             async with semaphore:
                 try:
                     results[idx] = await self.run_sample(sample)
-                    em = results[idx]["metrics"]["exact_match"]
-                    f1 = results[idx]["metrics"]["f1_score"]
+                    prec = results[idx]["metrics"]["precision"]
+                    rec = results[idx]["metrics"]["recall"]
+                    f1 = results[idx]["metrics"]["f1"]
                     logger.info(
                         f"[{idx+1}/{len(samples)}] {sample['_id']}"
-                        f" EM={int(em)} F1={f1:.2f}"
+                        f" P={prec:.2f} R={rec:.2f} F1={f1:.2f}"
                     )
                 except Exception as e:
                     logger.error(f"[{idx+1}] FAILED {sample.get('_id', '?')}: {e}")
@@ -184,7 +185,7 @@ class WikiAgent:
                 "used_titles": [],
                 "confidence": 0.0,
             },
-            "metrics": {"exact_match": False, "f1_score": 0.0, "supporting_fact_f1": 0.0},
+            "metrics": {"precision": 0.0, "recall": 0.0, "f1": 0.0, "supporting_fact_f1": 0.0},
         }
 
 

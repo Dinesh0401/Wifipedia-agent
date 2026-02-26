@@ -28,7 +28,7 @@ class PipelineConfig:
     active_model: str = field(default_factory=lambda: os.getenv("ACTIVE_MODEL", "llmcontrols"))
 
     # -- Model identifiers ---------------------------------------------------
-    claude_model: str       = "claude-opus-4-5-20251101"
+    claude_model: str       = "claude-opus-4-6"
     deepseek_model: str     = "deepseek/deepseek-chat-v3-0324"
     model_name: str         = field(default_factory=lambda: os.getenv("MODEL_NAME", "gpt-4o-mini"))
 

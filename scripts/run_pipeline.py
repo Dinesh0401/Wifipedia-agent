@@ -114,10 +114,11 @@ async def run_smoke():
 
     for r in results:
         print(f"Q: {r['task']['question']}")
-        print(f"Gold  : {r['task']['gold_answer']}")
-        print(f"Pred  : {r['prediction']['answer']}")
-        print(f"EM    : {r['metrics']['exact_match']}")
-        print(f"F1    : {r['metrics']['f1_score']:.2f}")
+        print(f"Gold      : {r['task']['gold_answer']}")
+        print(f"Pred      : {r['prediction']['answer']}")
+        print(f"Precision : {r['metrics']['precision']:.2f}")
+        print(f"Recall    : {r['metrics']['recall']:.2f}")
+        print(f"F1        : {r['metrics']['f1']:.2f}")
         print()
     logger.info("Smoke test complete")
 
@@ -168,19 +169,14 @@ async def main_async(args):
     print("=" * 70)
 
     for name, res in results.items():
-        if "metrics" in res:
-            m = res["metrics"]
+        if "summary_metrics" in res and res["summary_metrics"]:
+            m = res["summary_metrics"]
             print(f"\n  [{name.upper()}]")
-            print(
-                f"    EM        : {m['exact_match']['pct']}  "
-                f"CI95 {m['exact_match']['wilson_ci95']['pct']}"
-            )
-            print(
-                f"    F1        : {m['f1_score']['pct']}  "
-                f"CI95 {m['f1_score']['bootstrap_ci95']['pct']}"
-            )
+            print(f"    Precision : {m['precision_mean']}")
+            print(f"    Recall    : {m['recall_mean']}")
+            print(f"    F1        : {m['f1_mean']}")
             if "ace_faithfulness" in m:
-                print(f"    Faithful  : {m['ace_faithfulness']['pct']}")
+                print(f"    Faithful  : {m['ace_faithfulness']}")
 
     print("=" * 70)
     print(f"\nAll outputs saved in: {cfg.output_dir}/")
