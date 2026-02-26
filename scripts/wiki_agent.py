@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional
 
 from scripts.wiki_retriever import WikipediaRetriever
-from scripts.llmcontrols_client import LLMControlsClient
+from scripts.llm_client import UnifiedLLMClient
 from scripts.metrics import exact_match, f1_score, supporting_fact_f1
 from scripts.config import cfg
 
@@ -60,12 +60,13 @@ class WikiAgent:
       4. record()   -> immutable JSONL record ready for ACE / MIPROv2
     """
 
-    def __init__(self, skill_prefix: str = ""):
+    def __init__(self, skill_prefix: str = "", optimized_prompt: str = ""):
         self.retriever = WikipediaRetriever()
-        self.client = LLMControlsClient()
+        self.client = UnifiedLLMClient()
         self.skill_prefix = skill_prefix
+        self.optimized_prompt = optimized_prompt
         self._run_metadata = {
-            "model": cfg.model_name,
+            "model": cfg.get_display_model_name(),
             "temperature": cfg.temperature,
             "wiki_top_k": cfg.wiki_top_k,
             "timestamp": datetime.now().isoformat(),
@@ -138,7 +139,7 @@ class WikiAgent:
         return [r for r in results if r is not None]
 
     async def _reason(self, question: str, context: str) -> Dict[str, Any]:
-        prompt = f"{self.skill_prefix}{SYSTEM_PROMPT}\n\n{build_user_prompt(question, context)}"
+        prompt = f"{self.optimized_prompt}{self.skill_prefix}{SYSTEM_PROMPT}\n\n{build_user_prompt(question, context)}"
         raw_output = await self.client.generate(prompt)
         try:
             return self._parse_json(raw_output)
