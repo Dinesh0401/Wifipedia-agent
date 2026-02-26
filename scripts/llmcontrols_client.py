@@ -75,9 +75,22 @@ class LLMControlsClient:
 
         return await asyncio.gather(*[_guarded(p) for p in prompts])
 
-    # -- Sync wrapper for notebooks ------------------------------------------
+    # -- Sync wrapper for notebooks and DSPy ----------------------------------
     def generate_sync(self, prompt: str) -> str:
-        return asyncio.run(self.generate(prompt))
+        """Blocking wrapper that works in both CLI and Jupyter (nested loop)."""
+        try:
+            # Check if an event loop is already running (e.g. Jupyter, DSPy internals)
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop and loop.is_running():
+            # Already inside an event loop — use nest_asyncio to allow nesting
+            import nest_asyncio
+            nest_asyncio.apply()
+            return loop.run_until_complete(self.generate(prompt))
+        else:
+            return asyncio.run(self.generate(prompt))
 
     # -- Response extractor --------------------------------------------------
     @staticmethod
