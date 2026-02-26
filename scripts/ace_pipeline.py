@@ -1,0 +1,273 @@
+# =============================================================================
+# ace_pipeline.py  -- ACE Benchmark Evaluation (Offline + Online)
+# ACE = Agentic Context Engine -- measures faithfulness + accuracy
+# Offline: run once over test set | Online: iterative adaptation loop
+# =============================================================================
+
+import json
+import asyncio
+import logging
+from datetime import datetime
+from pathlib import Path
+from typing import List, Dict, Any, Optional
+
+import numpy as np
+import dspy
+
+from scripts.wiki_agent import WikiAgent
+from scripts.wiki_retriever import WikipediaRetriever
+from scripts.llmcontrols_client import LLMControlsClient
+from scripts.metrics import (
+    exact_match, f1_score, compute_metrics, print_metrics,
+    supporting_fact_f1,
+)
+from scripts.hotpotqa_loader import HotpotQALoader
+from scripts.config import cfg
+
+logger = logging.getLogger(__name__)
+
+
+# -- ACE Faithfulness Signature (DSPy) --------------------------------------
+
+class ACEFaithfulness(dspy.Signature):
+    """Evaluate whether a prediction is grounded in the provided context."""
+    question = dspy.InputField(desc="The original question")
+    context = dspy.InputField(desc="Retrieved Wikipedia passages")
+    prediction = dspy.InputField(desc="The model's predicted answer")
+    faithful = dspy.OutputField(desc="true or false")
+    reasoning = dspy.OutputField(desc="Brief explanation of the faithfulness judgement")
+
+
+# -- ACE Skill Reflector (Online mode) --------------------------------------
+
+class ACEReflector:
+    """After each wrong prediction, generate a reflective skill for the skillbook."""
+
+    def __init__(self):
+        self.skillbook: List[str] = []
+        self.client = LLMControlsClient()
+
+    async def reflect(
+        self,
+        question: str,
+        gold_answer: str,
+        wrong_prediction: str,
+        context: str,
+    ) -> str:
+        prompt = (
+            f"A model answered '{wrong_prediction}' but the correct answer was '{gold_answer}'.\n"
+            f"Question: {question}\n"
+            f"Context: {context[:500]}\n\n"
+            "In ONE sentence, state what retrieval or reasoning heuristic would have "
+            "prevented this mistake. Start with 'When ...'"
+        )
+        try:
+            skill = await self.client.generate(prompt)
+            skill = skill.strip().split("\n")[0][:200]
+            self.skillbook.append(skill)
+            logger.info(f"[ACE Reflect] New skill: {skill}")
+            return skill
+        except Exception as e:
+            logger.warning(f"Reflection failed: {e}")
+            return ""
+
+    def get_skill_prefix(self) -> str:
+        if not self.skillbook:
+            return ""
+        skills = "\n".join(f"  - {s}" for s in self.skillbook[-5:])
+        return f"LEARNED SKILLS:\n{skills}\n\n"
+
+
+# -- ACE Faithfulness Evaluator ---------------------------------------------
+
+class ACEFaithfulnessEvaluator:
+    """Uses DSPy ChainOfThought to judge faithfulness of predictions."""
+
+    def __init__(self):
+        lm = dspy.LM(
+            model=f"openai/{cfg.model_name}",
+            api_key=cfg.openai_api_key,
+            api_base=cfg.openai_base_url,
+            temperature=0.0,
+            max_tokens=150,
+        )
+        dspy.configure(lm=lm)
+        self.program = dspy.ChainOfThought(ACEFaithfulness)
+
+    def evaluate(
+        self, question: str, context: str, prediction: str
+    ) -> Dict[str, Any]:
+        try:
+            result = self.program(
+                question=question,
+                context=context[:1500],
+                prediction=prediction,
+            )
+            faithful_bool = "true" in result.faithful.lower()
+            return {
+                "faithful": faithful_bool,
+                "reasoning": result.reasoning,
+            }
+        except Exception as e:
+            logger.warning(f"ACE faithfulness eval failed: {e}")
+            return {"faithful": False, "reasoning": f"eval_error: {e}"}
+
+
+# -- Main ACE Runner --------------------------------------------------------
+
+class ACERunner:
+    """
+    Runs the full ACE benchmark in offline or online mode.
+    Offline: agent.run_batch(test_samples) -> metrics -> save
+    Online:  iterative loop with reflection after wrong predictions
+    """
+
+    def __init__(self, online_mode: bool = False):
+        self.online_mode = online_mode
+        self.agent = WikiAgent()
+        self.reflector = ACEReflector() if online_mode else None
+        self.faithfulness = ACEFaithfulnessEvaluator()
+
+    # -- Offline evaluation --------------------------------------------------
+    async def run_offline(
+        self, test_samples: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        logger.info(f"[ACE Offline] Running {len(test_samples)} samples ...")
+        predictions = await self.agent.run_batch(test_samples, concurrency=3)
+        predictions = self._attach_faithfulness(predictions)
+        return self._save_and_summarise(predictions, mode="offline")
+
+    # -- Online evaluation ---------------------------------------------------
+    async def run_online(
+        self,
+        test_samples: List[Dict[str, Any]],
+        max_reflections: int = None,
+    ) -> Dict[str, Any]:
+        max_ref = max_reflections or cfg.ace_max_reflections
+        logger.info(f"[ACE Online] {len(test_samples)} samples | max_reflections={max_ref}")
+
+        predictions = []
+        reflections = 0
+
+        for i, sample in enumerate(test_samples):
+            # Create agent with current skills injected
+            skill_prefix = self.reflector.get_skill_prefix() if self.reflector else ""
+            agent = WikiAgent(skill_prefix=skill_prefix)
+            record = await agent.run_sample(sample)
+
+            if not record["metrics"]["exact_match"] and reflections < max_ref:
+                skill = await self.reflector.reflect(
+                    question=sample["question"],
+                    gold_answer=sample["answer"],
+                    wrong_prediction=record["prediction"].get("answer", "UNKNOWN"),
+                    context=record["retrieval"]["raw_context"],
+                )
+                reflections += 1
+                record["online_skill"] = skill
+
+            record = self._attach_faithfulness_single(record)
+            predictions.append(record)
+
+            em = record["metrics"]["exact_match"]
+            f1 = record["metrics"]["f1_score"]
+            logger.info(
+                f"[{i+1}/{len(test_samples)}] EM={int(em)} F1={f1:.2f} "
+                f"faithful={record['ace']['faithful']}"
+            )
+
+        result = self._save_and_summarise(predictions, mode="online")
+        result["online_stats"] = {
+            "reflections_used": reflections,
+            "skillbook_size": len(self.reflector.skillbook),
+            "skillbook": self.reflector.skillbook,
+        }
+        return result
+
+    # -- Faithfulness attachment ---------------------------------------------
+    def _attach_faithfulness(
+        self, records: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        for r in records:
+            self._attach_faithfulness_single(r)
+        return records
+
+    def _attach_faithfulness_single(
+        self, record: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        faith = self.faithfulness.evaluate(
+            question=record["task"]["question"],
+            context=record["retrieval"].get("raw_context", ""),
+            prediction=record["prediction"].get("answer", ""),
+        )
+        record["ace"] = {
+            "faithful": faith["faithful"],
+            "ace_reasoning": faith["reasoning"],
+        }
+        return record
+
+    # -- Save + summarise ----------------------------------------------------
+    def _save_and_summarise(
+        self, predictions: List[Dict[str, Any]], mode: str
+    ) -> Dict[str, Any]:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        base = f"hotpotqa_ace_{mode}_{timestamp}"
+
+        jsonl_path = cfg.output_dir / f"{base}_predictions.jsonl"
+        with open(jsonl_path, "w", encoding="utf-8") as f:
+            for r in predictions:
+                f.write(json.dumps(r, default=str) + "\n")
+
+        metric_records = [p["metrics"] for p in predictions]
+        summary = compute_metrics(metric_records, split=f"test/{mode}")
+        print_metrics(summary)
+
+        faithful_vals = [p.get("ace", {}).get("faithful", False) for p in predictions]
+        ace_rate = float(np.mean(faithful_vals)) if faithful_vals else 0.0
+        summary["ace_faithfulness"] = {
+            "rate": round(ace_rate, 4),
+            "pct": f"{ace_rate * 100:.1f}%",
+        }
+
+        full_summary = {
+            "mode": mode,
+            "timestamp": timestamp,
+            "n_samples": len(predictions),
+            "metrics": summary,
+            "config": {
+                "model": cfg.model_name,
+                "temperature": cfg.temperature,
+                "wiki_top_k": cfg.wiki_top_k,
+            },
+        }
+        summary_path = cfg.output_dir / f"{base}_summary.json"
+        with open(summary_path, "w", encoding="utf-8") as f:
+            json.dump(full_summary, f, indent=2, default=str)
+
+        print(f"\nOutputs:")
+        print(f"  JSONL   -> {jsonl_path}")
+        print(f"  Summary -> {summary_path}")
+
+        return full_summary
+
+
+# -- Standalone runner -------------------------------------------------------
+
+async def main(online: bool = False):
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    loader = HotpotQALoader()
+    _, test = loader.load_train_test(max_train=1, max_test=cfg.max_test_samples)
+    runner = ACERunner(online_mode=online)
+    if online:
+        result = await runner.run_online(test)
+    else:
+        result = await runner.run_offline(test)
+    print(f"\nACE benchmark complete.")
+    print(f"  EM  : {result['metrics']['exact_match']['pct']}")
+    print(f"  F1  : {result['metrics']['f1_score']['pct']}")
+    print(f"  ACE : {result['metrics']['ace_faithfulness']['pct']}")
+
+
+if __name__ == "__main__":
+    import sys
+    online_flag = "--online" in sys.argv
+    asyncio.run(main(online=online_flag))

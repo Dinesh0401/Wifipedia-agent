@@ -1,0 +1,61 @@
+# =============================================================================
+# hotpotqa.yaml  -- HotpotQA Benchmark Task Configuration
+# =============================================================================
+
+task: hotpotqa
+version: "1.0"
+description: "HotpotQA multi-hop question answering with Wikipedia retrieval"
+
+data:
+  train:
+    source: local
+    file: hotpot_train_v1.1.json
+    hf_name: hotpot_qa
+    hf_split: train
+    max_samples: 200
+  test:
+    source: local
+    file: hotpot_dev_distractor_v1.json
+    hf_name: hotpot_qa
+    hf_split: validation
+    max_samples: 100
+  seed: 42
+
+retrieval:
+  backend: wikipedia_api
+  top_k: 3
+  max_chars_per_doc: 2000
+
+model:
+  name: gpt-4o-mini
+  temperature: 0.0
+  api: llmcontrols
+
+miprov2:
+  auto: medium
+  max_bootstrapped_demos: 4
+  max_labeled_demos: 4
+  num_candidates: 8
+  metric: f1
+  output_dir: optimized_programs/
+
+ace:
+  offline:
+    enabled: true
+  online:
+    enabled: true
+    max_reflections: 3
+    concurrency: 3
+
+metrics:
+  - name: exact_match
+    ci: wilson
+  - name: f1_score
+    ci: bootstrap
+  - name: supporting_fact_f1
+  - name: ace_faithfulness
+
+output:
+  dir: research_outputs/
+  format: jsonl
+  summary: true
