@@ -16,12 +16,13 @@ import dspy
 
 from scripts.wiki_agent import WikiAgent
 from scripts.wiki_retriever import WikipediaRetriever
-from scripts.llmcontrols_client import LLMControlsClient
+from scripts.llm_client import UnifiedLLMClient
 from scripts.metrics import (
     exact_match, f1_score, compute_metrics, print_metrics,
     supporting_fact_f1,
 )
 from scripts.hotpotqa_loader import HotpotQALoader
+from scripts.dspy_adapter import configure_dspy
 from scripts.config import cfg
 
 logger = logging.getLogger(__name__)
@@ -45,7 +46,7 @@ class ACEReflector:
 
     def __init__(self):
         self.skillbook: List[str] = []
-        self.client = LLMControlsClient()
+        self.client = UnifiedLLMClient()
 
     async def reflect(
         self,
@@ -84,14 +85,7 @@ class ACEFaithfulnessEvaluator:
     """Uses DSPy ChainOfThought to judge faithfulness of predictions."""
 
     def __init__(self):
-        lm = dspy.LM(
-            model=f"openai/{cfg.model_name}",
-            api_key=cfg.openai_api_key,
-            api_base=cfg.openai_base_url,
-            temperature=0.0,
-            max_tokens=150,
-        )
-        dspy.configure(lm=lm)
+        configure_dspy(temperature=0.0, max_tokens=150)
         self.program = dspy.ChainOfThought(ACEFaithfulness)
 
     def evaluate(
@@ -122,11 +116,40 @@ class ACERunner:
     Online:  iterative loop with reflection after wrong predictions
     """
 
-    def __init__(self, online_mode: bool = False):
+    def __init__(self, online_mode: bool = False, optimized_program_path: str = None):
         self.online_mode = online_mode
-        self.agent = WikiAgent()
+        self.optimized_prompt = self._load_optimized_prompt(optimized_program_path)
+        self.agent = WikiAgent(optimized_prompt=self.optimized_prompt)
         self.reflector = ACEReflector() if online_mode else None
         self.faithfulness = ACEFaithfulnessEvaluator()
+
+    @staticmethod
+    def _load_optimized_prompt(path: str) -> str:
+        """Load the optimized prompt/demos from MIPROv2 JSON output."""
+        if not path:
+            return ""
+        try:
+            import json
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            # Extract any instruction or demo text from the saved program
+            parts = []
+            # DSPy saves programs with various structures; extract what we can
+            if isinstance(data, dict):
+                for key, val in data.items():
+                    if isinstance(val, str) and len(val) > 10:
+                        parts.append(val)
+                    elif isinstance(val, dict):
+                        for subkey, subval in val.items():
+                            if isinstance(subval, str) and len(subval) > 10:
+                                parts.append(f"{subkey}: {subval}")
+            if parts:
+                prompt = "OPTIMIZED INSTRUCTIONS:\n" + "\n".join(parts[:5]) + "\n\n"
+                logger.info(f"Loaded optimized prompt from {path} ({len(prompt)} chars)")
+                return prompt
+        except Exception as e:
+            logger.warning(f"Could not load optimized program from {path}: {e}")
+        return ""
 
     # -- Offline evaluation --------------------------------------------------
     async def run_offline(
@@ -150,9 +173,12 @@ class ACERunner:
         reflections = 0
 
         for i, sample in enumerate(test_samples):
-            # Create agent with current skills injected
+            # Create agent with current skills AND optimized prompt injected
             skill_prefix = self.reflector.get_skill_prefix() if self.reflector else ""
-            agent = WikiAgent(skill_prefix=skill_prefix)
+            agent = WikiAgent(
+                skill_prefix=skill_prefix,
+                optimized_prompt=self.optimized_prompt,
+            )
             record = await agent.run_sample(sample)
 
             if not record["metrics"]["exact_match"] and reflections < max_ref:
@@ -234,7 +260,7 @@ class ACERunner:
             "n_samples": len(predictions),
             "metrics": summary,
             "config": {
-                "model": cfg.model_name,
+                "model": cfg.get_display_model_name(),
                 "temperature": cfg.temperature,
                 "wiki_top_k": cfg.wiki_top_k,
             },
