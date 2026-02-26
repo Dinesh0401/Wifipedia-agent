@@ -10,19 +10,27 @@ from dotenv import load_dotenv
 
 # Load .env from project root
 _project_root = Path(__file__).resolve().parent.parent
-load_dotenv(_project_root / ".env")
+load_dotenv(_project_root / ".env", override=True)
+
+# Valid model backend names
+VALID_MODELS = ("llmcontrols", "claude", "deepseek")
 
 
 @dataclass
 class PipelineConfig:
-    # -- API -----------------------------------------------------------------
-    llmc_api_key: str     = field(default_factory=lambda: os.getenv("LLMC_API_KEY", ""))
-    llmc_api_url: str     = field(default_factory=lambda: os.getenv("LLMC_API_URL", ""))
-    openai_api_key: str   = field(default_factory=lambda: os.getenv("LLMC_API_KEY", ""))
-    openai_base_url: str  = field(default_factory=lambda: os.getenv(
-        "OPENAI_BASE_URL", "https://api.llmcontrols.ai/api/v1"
-    ))
-    model_name: str       = field(default_factory=lambda: os.getenv("MODEL_NAME", "gpt-4o-mini"))
+    # -- API keys ------------------------------------------------------------
+    llmc_api_key: str        = field(default_factory=lambda: os.getenv("LLMC_API_KEY", ""))
+    llmc_api_url: str        = field(default_factory=lambda: os.getenv("LLMC_API_URL", ""))
+    anthropic_api_key: str   = field(default_factory=lambda: os.getenv("ANTHROPIC_API_KEY", ""))
+    openrouter_api_key: str  = field(default_factory=lambda: os.getenv("OPENROUTER_API_KEY", ""))
+
+    # -- Active model (set via --model CLI flag or env) ----------------------
+    active_model: str = field(default_factory=lambda: os.getenv("ACTIVE_MODEL", "llmcontrols"))
+
+    # -- Model identifiers ---------------------------------------------------
+    claude_model: str       = "claude-opus-4-5-20251101"
+    deepseek_model: str     = "deepseek/deepseek-chat-v3-0324"
+    model_name: str         = field(default_factory=lambda: os.getenv("MODEL_NAME", "gpt-4o-mini"))
 
     # -- Retrieval -----------------------------------------------------------
     wiki_top_k: int       = 3
@@ -53,10 +61,30 @@ class PipelineConfig:
     def __post_init__(self):
         self.output_dir.mkdir(exist_ok=True)
         self.opt_dir.mkdir(exist_ok=True)
-        if not self.llmc_api_key:
-            raise ValueError("LLMC_API_KEY not set. Add it to .env")
-        if not self.llmc_api_url:
-            raise ValueError("LLMC_API_URL not set. Add it to .env")
+        if self.active_model not in VALID_MODELS:
+            raise ValueError(
+                f"ACTIVE_MODEL must be one of {VALID_MODELS}, got '{self.active_model}'"
+            )
+        # Validate that the chosen model has its API key
+        if self.active_model == "llmcontrols":
+            if not self.llmc_api_key or not self.llmc_api_url:
+                raise ValueError("LLMC_API_KEY and LLMC_API_URL must be set for llmcontrols model")
+        elif self.active_model == "claude":
+            if not self.anthropic_api_key:
+                raise ValueError("ANTHROPIC_API_KEY must be set for claude model")
+        elif self.active_model == "deepseek":
+            if not self.openrouter_api_key:
+                raise ValueError("OPENROUTER_API_KEY must be set for deepseek model")
+
+    def get_display_model_name(self) -> str:
+        """Return a human-readable model name for the active backend."""
+        if self.active_model == "llmcontrols":
+            return f"llmcontrols/{self.model_name}"
+        elif self.active_model == "claude":
+            return self.claude_model
+        elif self.active_model == "deepseek":
+            return self.deepseek_model
+        return self.active_model
 
 
 # -- Singleton ---------------------------------------------------------------
