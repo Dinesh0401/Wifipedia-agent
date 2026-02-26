@@ -18,6 +18,7 @@ import numpy as np
 from scripts.metrics import exact_match, f1_score, compute_metrics, print_metrics
 from scripts.hotpotqa_loader import HotpotQALoader
 from scripts.wiki_retriever import WikipediaRetriever
+from scripts.dspy_adapter import configure_dspy
 from scripts.config import cfg
 
 logger = logging.getLogger(__name__)
@@ -56,16 +57,12 @@ class MIPROv2Optimizer:
         self._setup_dspy()
 
     def _setup_dspy(self):
-        """Configure DSPy to use the LLMControls / OpenAI-compatible endpoint."""
-        lm = dspy.LM(
-            model=f"openai/{cfg.model_name}",
-            api_key=cfg.openai_api_key,
-            api_base=cfg.openai_base_url,
+        """Configure DSPy to use LLMControls via the custom adapter."""
+        configure_dspy(
             temperature=cfg.temperature,
             max_tokens=300,
         )
-        dspy.configure(lm=lm)
-        logger.info(f"DSPy configured: {cfg.model_name} @ {cfg.openai_base_url}")
+        logger.info(f"DSPy configured with {cfg.active_model} backend")
 
     def _make_program(self) -> dspy.Module:
         return dspy.ChainOfThought(BridgeQAWithReasoning)
