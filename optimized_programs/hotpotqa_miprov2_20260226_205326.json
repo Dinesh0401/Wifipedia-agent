@@ -1,0 +1,57 @@
+{
+  "predict": {
+    "traces": [],
+    "train": [],
+    "demos": [
+      {
+        "question": "The Thoen Stone is on display at a museum in what county?",
+        "context": "TITLE: The Thoen Stone is on display at a museum in what county?\nNo good Wikipedia Search Result was found",
+        "answer": "Lawrence County"
+      },
+      {
+        "question": "Which is currently more valuable, Temagami-Lorrain Mine or Meadowbank Gold Mine?",
+        "context": "TITLE: Which is currently more valuable, Temagami-Lorrain Mine or Meadowbank Gold Mine?\nNo good Wikipedia Search Result was found\n\n---\n\nTITLE: Temagami\nSummary: Temagami, formerly spelled Timagami, is a municipality in northeastern Ontario, Canada, in the Nipissing District with Lake Temagami at its heart.\nThe Temagami region is known as n'Daki Menan, the homeland of the area's First Nations community, most of whom are Anishinaabe (Ojibwe), living on Bear Island. The official name for this group is the Temagami First Nation. However, a larger group that includes these people, plus non-status residents and some non-residents is called the Teme-Augama Anishnabai.\nIn addition to the main population centre called Temagami, the municipality also includes the communities of Lake Temagami, Marten River, and Temagami North.\n\n---\n\nTITLE: Temagami Magnetic Anomaly\nSummary: The Temagami Magnetic Anomaly, also called the Temagami Anomaly or the Wanapitei Anomaly, is a magnetic anomaly resulting from a large buried geologic structure in the Canadian Shield near Temagami, Ontario, Canada. It stretches from Lake Wanapitei in the west to Bear Island in Lake Temagami.\nThe Indigenous community of Teme-Augama Anishnabai lies partly within the Temagami Magnetic Anomaly, including the Temagami First Nation on Bear Island. Located nearby are a number of other geological structures, including the Sudbury Basin, the Lake Wanapitei impact crater, and the Temagami Greenstone Belt.",
+        "answer": "Meadowbank Gold Mine"
+      },
+      {
+        "question": "When a Man Falls in Love, is a 2013 South Korean television series, starring Song Seung-heon, Shin Se-kyung, Chae Jung-an, and which South Korean actor, born on ? ",
+        "context": "TITLE: Song Seung-heon\nSummary: Song Seung-heon (Korean: 송승헌; born October 5, 1976) is a South Korean model and actor. He has acted in various television dramas, notably Autumn in My Heart (2000), East of Eden (2008), My Princess (2011), Black (2017), Player (2018), The Great Show (2019), and Dinner Mate (2020).\n\n---\n\nTITLE: Shin Se-kyung\nSummary: Shin Se-kyung (Korean: 신세경; born July 29, 1990) is a South Korean actress. She started as a child actress and had her breakthrough in the sitcom High Kick Through the Roof (2009). Since then, she starred in the films Hindsight (2011), R2B: Return to Base (2012) and Tazza: The Hidden Card (2014), as well as the television series Deep Rooted Tree (2011), A Girl Who Sees Smells (2015), Six Flying Dragons (2015–2016), The Bride of Habaek (2017), Black Knight: The Man Who Guards Me (2017–2018), Rookie Historian Goo Hae-ryung (2019), Run On (2020) and Captivating the King (2024).\nForbes listed her on the Forbes Korea Power Celebrity 40; she ranked 26th in 2011 and 14th in 2012.\n\n---\n\nTITLE: Jung Hae-in\nSummary: Jung Hae-in (Korean: 정해인; born April 1, 1988) is a South Korean actor. Jung first gained recognition with supporting roles in the television dramas While You Were Sleeping (2017) and Prison Playbook (2017–2018). He has since starred in Something in the Rain (2018), One Spring Night (2019), D.P. (2021–2023), Snowdrop (2021–2022), and Love Next Door (2024). Jung has also starred in the films Tune in for Love (2019), Start-Up (2019), and I, the Executioner (2024).",
+        "answer": "July 5, 1984"
+      },
+      {
+        "question": "Fast Cars, Danger, Fire and Knives includes guest appearances from which hip hop record executive?",
+        "context": "TITLE: El-P discography\nSummary: El-P (real name Jaime Meline, also known as El-Producto) is a New York–based hip hop artist and co-founder, owner, and CEO of Definitive Jux Records.  His discography consists of three solo studio albums, five instrumental albums, two mix tapes, and eleven singles. He has also appeared on numerous other artist's recordings as either a guest vocalist or producer. Releases from Company Flow, The Weathermen, and Run the Jewels, all of which El-P has been a member, are not included in this discography: only solo material.\nEl-P's early career and rise to prominence was as part of Company Flow, formed in 1992, consisting of El-P, Mr. Len, Bigg Jus.  Following the break-up of the group, El-P started his own record label, Definitive Jux.  El-P produced early records from the label, including Cannibal Ox's critically acclaimed The Cold Vein and his own debut solo album, Fantastic Damage.  El-P released his second solo album, I'll Sleep When You're Dead, in 2007.\nEl-P has contributed as producer and guest vocalist to albums by artists such as DJ Krush, Aesop Rock, Murs, Cage, Mr. Lif, Prefuse 73, Del tha Funkee Homosapien, Mike Ladd, and Atmosphere, among many others.  He collaborated with Alec Empire on the first Handsome Boy Modeling School album and with Cage and Chino Moreno on the second.  El-P also provided the soundtrack for the graffiti film Bomb the System.\n\n---\n\nTITLE: List of films with post-credits scenes\nSummary: Many films have featured mid- and post-credits scenes. Such scenes often include comedic gags, plot revelations, outtakes, or hints about sequels.\n\n---\n\nTITLE: Britney Spears\nSummary: Britney Jean Spears (born December 2, 1981) is an American singer. Referred to as the \"Princess of Pop\", she is widely regarded as one of the most culturally significant figures of the 21st century. She is known for her distinctive vocal style, energetic stage performances, and contributions to the revival of teen pop music.\nSpears began her career in",
+        "answer": "Jaime Meline"
+      }
+    ],
+    "signature": {
+      "instructions": "Solve a multi-hop Wikipedia bridge question with chain-of-thought.",
+      "fields": [
+        {
+          "prefix": "Question:",
+          "description": "Multi-hop factual question"
+        },
+        {
+          "prefix": "Context:",
+          "description": "Retrieved Wikipedia passages"
+        },
+        {
+          "prefix": "Reasoning:",
+          "description": "Chain-of-thought: Entity1 -> bridge -> Entity2"
+        },
+        {
+          "prefix": "Answer:",
+          "description": "Concise final answer (1-5 words)"
+        }
+      ]
+    },
+    "lm": null
+  },
+  "metadata": {
+    "dependency_versions": {
+      "python": "3.10",
+      "dspy": "3.1.3",
+      "cloudpickle": "3.1"
+    }
+  }
+}
