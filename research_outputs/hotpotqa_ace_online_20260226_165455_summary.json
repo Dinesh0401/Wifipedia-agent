@@ -1,0 +1,37 @@
+{
+  "mode": "online",
+  "timestamp": "20260226_165455",
+  "n_samples": 10,
+  "metrics": {
+    "split": "test/online",
+    "n": 10,
+    "exact_match": {
+      "mean": 0.3,
+      "pct": "30.0%",
+      "wilson_ci95": {
+        "lower": 0.1078,
+        "upper": 0.6032,
+        "pct": "[10.8%, 60.3%]"
+      }
+    },
+    "f1_score": {
+      "mean": 0.3,
+      "std": 0.4583,
+      "pct": "30.0%",
+      "bootstrap_ci95": {
+        "lower": 0.0,
+        "upper": 0.6,
+        "pct": "[0.0%, 60.0%]"
+      }
+    },
+    "ace_faithfulness": {
+      "rate": 0.8,
+      "pct": "80.0%"
+    }
+  },
+  "config": {
+    "model": "claude-opus-4-6",
+    "temperature": 0.0,
+    "wiki_top_k": 3
+  }
+}
