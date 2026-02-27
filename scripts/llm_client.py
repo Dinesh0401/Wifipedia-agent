@@ -25,24 +25,37 @@ class UnifiedLLMClient:
       - deepseek:    OpenRouter OpenAI-compatible API (https://openrouter.ai/api/v1)
     """
 
-    def __init__(self, max_retries: int = 3, retry_delay: float = 2.0):
+    def __init__(self, max_retries: int = 3, retry_delay: float = 2.0,
+                 model_override: str = None, backend_override: str = None,
+                 api_key_override: str = None, api_url_override: str = None):
         self.max_retries = max_retries
         self.retry_delay = retry_delay
+        self.model_override = model_override
+        self.backend_override = backend_override
+        self.api_key_override = api_key_override
+        self.api_url_override = api_url_override
 
     # -- Core async generate ---------------------------------------------------
-    async def generate(self, prompt: str, timeout: int = 60) -> str:
-        backend = cfg.active_model
+    async def generate(self, prompt: str, timeout: int = 60, temperature: float = None) -> str:
+        # Determine backend: explicit override > model_override (implies claude) > config
+        if self.backend_override:
+            backend = self.backend_override
+        elif self.model_override:
+            backend = "claude"
+        else:
+            backend = cfg.active_model
+
         if backend == "llmcontrols":
             return await self._generate_llmcontrols(prompt, timeout)
         elif backend == "claude":
-            return await self._generate_claude(prompt, timeout)
+            return await self._generate_claude(prompt, timeout, temperature=temperature)
         elif backend == "deepseek":
-            return await self._generate_deepseek(prompt, timeout)
+            return await self._generate_deepseek(prompt, timeout, temperature=temperature)
         else:
-            raise ValueError(f"Unknown active_model: {backend}")
+            raise ValueError(f"Unknown backend: {backend}")
 
     # -- Sync wrapper ----------------------------------------------------------
-    def generate_sync(self, prompt: str) -> str:
+    def generate_sync(self, prompt: str, temperature: float = None) -> str:
         """Blocking wrapper that works in both CLI and Jupyter (nested loop)."""
         try:
             loop = asyncio.get_running_loop()
@@ -52,9 +65,9 @@ class UnifiedLLMClient:
         if loop and loop.is_running():
             import nest_asyncio
             nest_asyncio.apply()
-            return loop.run_until_complete(self.generate(prompt))
+            return loop.run_until_complete(self.generate(prompt, temperature=temperature))
         else:
-            return asyncio.run(self.generate(prompt))
+            return asyncio.run(self.generate(prompt, temperature=temperature))
 
     # -- Batch async generate --------------------------------------------------
     async def batch_generate(self, prompts: list[str], concurrency: int = 5) -> list[str]:
@@ -72,7 +85,7 @@ class UnifiedLLMClient:
     async def _generate_llmcontrols(self, prompt: str, timeout: int) -> str:
         headers = {
             "Content-Type": "application/json",
-            "x-api-key": cfg.llmc_api_key,
+            "x-api-key": self.api_key_override or cfg.llmc_api_key,
         }
         payload = {
             "input_value": prompt,
@@ -80,7 +93,7 @@ class UnifiedLLMClient:
             "input_type": "chat",
         }
         return await self._request_with_retry(
-            url=cfg.llmc_api_url,
+            url=self.api_url_override or cfg.llmc_api_url,
             headers=headers,
             payload=payload,
             timeout=timeout,
@@ -103,16 +116,16 @@ class UnifiedLLMClient:
     # ==========================================================================
     # Backend: Claude (Anthropic Messages API)
     # ==========================================================================
-    async def _generate_claude(self, prompt: str, timeout: int) -> str:
+    async def _generate_claude(self, prompt: str, timeout: int, temperature: float = None) -> str:
         headers = {
             "Content-Type": "application/json",
             "x-api-key": cfg.anthropic_api_key,
             "anthropic-version": "2023-06-01",
         }
         payload = {
-            "model": cfg.claude_model,
+            "model": self.model_override or cfg.claude_model,
             "max_tokens": 512,
-            "temperature": cfg.temperature,
+            "temperature": temperature if temperature is not None else cfg.temperature,
             "messages": [{"role": "user", "content": prompt}],
         }
         return await self._request_with_retry(
@@ -135,14 +148,14 @@ class UnifiedLLMClient:
     # ==========================================================================
     # Backend: DeepSeek (OpenRouter, OpenAI-compatible)
     # ==========================================================================
-    async def _generate_deepseek(self, prompt: str, timeout: int) -> str:
+    async def _generate_deepseek(self, prompt: str, timeout: int, temperature: float = None) -> str:
         headers = {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {cfg.openrouter_api_key}",
         }
         payload = {
             "model": cfg.deepseek_model,
-            "temperature": cfg.temperature,
+            "temperature": temperature if temperature is not None else cfg.temperature,
             "max_tokens": 512,
             "messages": [{"role": "user", "content": prompt}],
         }

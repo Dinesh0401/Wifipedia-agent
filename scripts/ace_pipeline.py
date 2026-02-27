@@ -18,8 +18,7 @@ from scripts.wiki_agent import WikiAgent
 from scripts.wiki_retriever import WikipediaRetriever
 from scripts.llm_client import UnifiedLLMClient
 from scripts.metrics import (
-    compute_metrics, print_metrics,
-    supporting_fact_f1,
+    compute_metrics, print_metrics, wilson_ci,
 )
 from scripts.hotpotqa_loader import HotpotQALoader
 from scripts.dspy_adapter import configure_dspy
@@ -181,7 +180,7 @@ class ACERunner:
             )
             record = await agent.run_sample(sample)
 
-            if record["metrics"]["f1"] == 0.0 and reflections < max_ref:
+            if not record["metrics"]["judge_correct"] and reflections < max_ref:
                 skill = await self.reflector.reflect(
                     question=sample["question"],
                     gold_answer=sample["answer"],
@@ -194,11 +193,10 @@ class ACERunner:
             record = self._attach_faithfulness_single(record)
             predictions.append(record)
 
-            prec = record["metrics"]["precision"]
-            rec = record["metrics"]["recall"]
-            f1 = record["metrics"]["f1"]
+            score = record["metrics"]["judge_verdict"]
+            correct = record["metrics"]["judge_correct"]
             logger.info(
-                f"[{i+1}/{len(test_samples)}] P={prec:.2f} R={rec:.2f} F1={f1:.2f} "
+                f"[{i+1}/{len(test_samples)}] verdict={score} correct={correct} "
                 f"faithful={record['ace']['faithful']}"
             )
 
@@ -232,7 +230,7 @@ class ACERunner:
         }
         return record
 
-    # -- Save + summarise (FINER-ORD JSON schema) -----------------------------
+    # -- Save + summarise (LLM-as-a-Judge JSON schema) ---------------------------
     def _save_and_summarise(
         self, predictions: List[Dict[str, Any]], mode: str
     ) -> Dict[str, Any]:
@@ -244,30 +242,30 @@ class ACERunner:
             for r in predictions:
                 f.write(json.dumps(r, default=str) + "\n")
 
-        metric_records = [p["metrics"] for p in predictions]
+        metric_records = [{
+            "judge_correct": p["metrics"]["judge_correct"],
+        } for p in predictions]
         summary = compute_metrics(metric_records, split=f"test/{mode}")
         print_metrics(summary)
 
         faithful_vals = [p.get("ace", {}).get("faithful", False) for p in predictions]
         ace_rate = float(np.mean(faithful_vals)) if faithful_vals else 0.0
+        ace_lo, ace_hi = wilson_ci(ace_rate, len(predictions))
 
-        # FINER-ORD compatible output schema
+        # LLM-as-a-Judge output schema
         full_summary = {
             "benchmark": "hotpotqa",
             "model": cfg.get_display_model_name(),
             "timestamp": timestamp,
             "samples_evaluated": len(predictions),
             "summary_metrics": {
-                "precision_mean": summary["precision_mean"],
-                "precision_min": summary["precision_min"],
-                "precision_max": summary["precision_max"],
-                "recall_mean": summary["recall_mean"],
-                "recall_min": summary["recall_min"],
-                "recall_max": summary["recall_max"],
-                "f1_mean": summary["f1_mean"],
-                "f1_min": summary["f1_min"],
-                "f1_max": summary["f1_max"],
+                "yes_count": summary["yes_count"],
+                "no_count": summary["no_count"],
+                "accuracy": summary["accuracy"],
+                "accuracy_pct": summary["accuracy_pct"],
+                "wilson_ci95": summary["wilson_ci95"],
                 "ace_faithfulness": round(ace_rate, 4),
+                "ace_faithfulness_pct": f"{ace_rate * 100:.1f}%",
             },
             "configuration": {
                 "split": "test",
@@ -289,6 +287,24 @@ class ACERunner:
         print(f"  JSONL   -> {jsonl_path}")
         print(f"  Summary -> {summary_path}")
 
+        # Attach per-sample verdicts for pipeline output formatting
+        full_summary["per_sample_verdicts"] = [
+            p["metrics"]["judge_correct"] for p in predictions
+        ]
+        full_summary["per_sample_faithful"] = [
+            p.get("ace", {}).get("faithful", False) for p in predictions
+        ]
+        # Attach per-sample records with question/prediction/gold_answer/correct
+        full_summary["per_sample_records"] = [
+            {
+                "question": p["task"]["question"],
+                "prediction": p["prediction"].get("answer", "UNKNOWN"),
+                "gold_answer": p["task"]["gold_answer"],
+                "correct": p["metrics"]["judge_correct"],
+            }
+            for p in predictions
+        ]
+
         return full_summary
 
 
@@ -305,10 +321,9 @@ async def main(online: bool = False):
         result = await runner.run_offline(test)
     m = result["summary_metrics"]
     print(f"\nACE benchmark complete.")
-    print(f"  Precision : {m['precision_mean']}")
-    print(f"  Recall    : {m['recall_mean']}")
-    print(f"  F1        : {m['f1_mean']}")
-    print(f"  Faithful  : {m['ace_faithfulness']}")
+    print(f"  Accuracy : {m['accuracy_pct']}  CI95 {m['wilson_ci95']}")
+    print(f"  Yes/No   : {m['yes_count']}/{m['no_count']}")
+    print(f"  Faithful : {m['ace_faithfulness_pct']}")
 
 
 if __name__ == "__main__":

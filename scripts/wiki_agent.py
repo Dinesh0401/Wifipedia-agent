@@ -12,26 +12,26 @@ from typing import List, Dict, Any, Optional
 
 from scripts.wiki_retriever import WikipediaRetriever
 from scripts.llm_client import UnifiedLLMClient
-from scripts.metrics import token_precision_recall_f1, supporting_fact_f1
+from scripts.llm_judge import LLMJudge
 from scripts.config import cfg
 
 logger = logging.getLogger(__name__)
 
 
-SYSTEM_PROMPT = """You are a research assistant solving multi-hop Wikipedia questions.
+SYSTEM_PROMPT = """You are a research assistant solving Wikipedia questions.
 
 TASK: Given a question and retrieved Wikipedia passages, provide a precise answer.
 
 RULES:
 1. Answer ONLY from the retrieved passages. Do NOT use prior knowledge.
-2. Bridge reasoning: identify Entity1 -> bridge entity -> Entity2.
+2. Read the passages carefully and extract the relevant fact.
 3. Keep the answer SHORT (1-5 words). Match expected HotpotQA answer format.
 4. If the passages do not contain the answer, set answer to "UNKNOWN".
 5. Return ONLY valid JSON. No markdown, no explanation outside JSON.
 
 OUTPUT FORMAT:
 {
-  "analysis": "brief chain-of-thought (max 2 sentences)",
+  "analysis": "brief reasoning (max 2 sentences)",
   "answer": "short final answer",
   "used_titles": ["list of Wikipedia titles you relied on"],
   "confidence": 0.0-1.0
@@ -55,14 +55,15 @@ class WikiAgent:
 
     Pipeline per sample:
       1. retrieve() -> real Wikipedia passages via LangChain
-      2. reason()   -> call LLMControls API with strict JSON prompt
-      3. evaluate() -> EM + F1 + supporting-fact F1
+      2. reason()   -> call LLM API with strict JSON prompt
+      3. evaluate() -> LLM-as-a-Judge semantic evaluation
       4. record()   -> immutable JSONL record ready for ACE / MIPROv2
     """
 
     def __init__(self, skill_prefix: str = "", optimized_prompt: str = ""):
         self.retriever = WikipediaRetriever()
         self.client = UnifiedLLMClient()
+        self.judge = LLMJudge()
         self.skill_prefix = skill_prefix
         self.optimized_prompt = optimized_prompt
         self._run_metadata = {
@@ -75,7 +76,6 @@ class WikiAgent:
     async def run_sample(self, sample: Dict[str, Any]) -> Dict[str, Any]:
         question = sample["question"]
         gold_ans = sample["answer"]
-        gold_facts = sample.get("supporting_facts", [])
 
         docs = await self.retriever.retrieve_async(question)
         if not docs:
@@ -85,9 +85,10 @@ class WikiAgent:
         context = self.retriever.build_context(docs)
         prediction = await self._reason(question, context)
 
-        prec, rec, f1 = token_precision_recall_f1(prediction["answer"], gold_ans)
-        sf_f1 = supporting_fact_f1(
-            prediction.get("used_titles", []), gold_facts
+        judgment = await self.judge.judge(
+            question=question,
+            gold_answer=gold_ans,
+            prediction=prediction["answer"],
         )
 
         return {
@@ -106,10 +107,9 @@ class WikiAgent:
             },
             "prediction": prediction,
             "metrics": {
-                "precision": prec,
-                "recall": rec,
-                "f1": f1,
-                "supporting_fact_f1": sf_f1,
+                "judge_verdict": judgment["verdict"],
+                "judge_correct": judgment["correct"],
+                "judge_reasoning": judgment["reasoning"],
             },
         }
 
@@ -125,12 +125,11 @@ class WikiAgent:
             async with semaphore:
                 try:
                     results[idx] = await self.run_sample(sample)
-                    prec = results[idx]["metrics"]["precision"]
-                    rec = results[idx]["metrics"]["recall"]
-                    f1 = results[idx]["metrics"]["f1"]
+                    verdict = results[idx]["metrics"]["judge_verdict"]
+                    correct = results[idx]["metrics"]["judge_correct"]
                     logger.info(
                         f"[{idx+1}/{len(samples)}] {sample['_id']}"
-                        f" P={prec:.2f} R={rec:.2f} F1={f1:.2f}"
+                        f" verdict={verdict} correct={correct}"
                     )
                 except Exception as e:
                     logger.error(f"[{idx+1}] FAILED {sample.get('_id', '?')}: {e}")
@@ -185,7 +184,7 @@ class WikiAgent:
                 "used_titles": [],
                 "confidence": 0.0,
             },
-            "metrics": {"precision": 0.0, "recall": 0.0, "f1": 0.0, "supporting_fact_f1": 0.0},
+            "metrics": {"judge_verdict": "No", "judge_correct": False, "judge_reasoning": "error"},
         }
 
 

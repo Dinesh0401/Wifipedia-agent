@@ -1,0 +1,25 @@
+{
+  "benchmark": "hotpotqa",
+  "model": "claude-opus-4-6",
+  "timestamp": "20260227_113736",
+  "samples_evaluated": 100,
+  "summary_metrics": {
+    "llm_judge_correct_rate": 0.63,
+    "llm_judge_correct_pct": "63.0%",
+    "llm_judge_mean_score": 0.637,
+    "wilson_ci95": "[53.2%, 71.8%]",
+    "ace_faithfulness": 0.44,
+    "ace_faithfulness_pct": "44.0%"
+  },
+  "configuration": {
+    "split": "test",
+    "epochs": 1,
+    "temperature": 0.0,
+    "max_tokens": 2048,
+    "skip_adaptation": false,
+    "split_ratio": 0.8,
+    "online_mode": false,
+    "prompt_version": "v1",
+    "evaluation_mode": "offline_train_test_split"
+  }
+}

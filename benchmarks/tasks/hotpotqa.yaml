@@ -3,8 +3,8 @@
 # =============================================================================
 
 task: hotpotqa
-version: "1.0"
-description: "HotpotQA multi-hop question answering with Wikipedia retrieval"
+version: "1.1"
+description: "HotpotQA single-hop question answering with Wikipedia retrieval"
 
 data:
   train:
@@ -19,6 +19,9 @@ data:
     hf_name: hotpot_qa
     hf_split: validation
     max_samples: 1000
+  filter:
+    single_hop_only: true
+    max_supporting_facts: 1
   seed: 42
 
 retrieval:

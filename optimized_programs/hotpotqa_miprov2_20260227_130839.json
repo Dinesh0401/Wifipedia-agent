@@ -1,0 +1,61 @@
+{
+  "predict": {
+    "traces": [],
+    "train": [],
+    "demos": [
+      {
+        "augmented": true,
+        "question": "What profession does Nicholas Ray and Elia Kazan have in common?",
+        "context": "TITLE: Laurence Olivier\nSummary: Laurence Kerr Olivier, Baron Olivier (22 May 1907 – 11 July 1989) was an English actor and director. He and his contemporaries John Gielgud, Michael Redgrave and Ralph Richardson made up a quartet of male actors who dominated the British stage of the mid-20th century. He also worked in films throughout his career, playing more than fifty cinema roles. Late in his career he had considerable success in television roles.\nOlivier's family had no theatrical connections, but his father, a clergyman, decided that his son should become an actor. After attending a drama school in London, Olivier learned his craft in a succession of acting jobs during the late 1920s. In 1930 he had his first important West End success in Noël Coward's Private Lives, and he appeared in his first film. In 1935 he played in a celebrated production of Romeo and Juliet alongside Gielgud and Peggy Ashcroft, and by the end of the decade he was an established star. In the 1940s, together with Richardson and John Burrell, Olivier was the co-director of the Old Vic, building it into a highly respected company. There his most celebrated roles included Shakespeare's Richard III and Sophocles's Oedipus.\nIn the 1950s Olivier was an independent actor-manager, but his stage career had stagnated until he joined the avant-garde English Stage Company in 1957 to play the title role in The Entertainer, a part he later reprised on film. From 1963 to 1973 he was the founding director of Britain's National Theatre, running a resident company that fostered many future stars. His own parts there included the title role in Othello (1965), and Shylock in The Merchant of Venice (1970). Among Olivier's films are Wuthering Heights (1939), Rebecca (1940) and a trilogy of Shakespeare films as actor/director: Henry V (1944), Hamlet (1948) and Richard III (1955). His later films included Spartacus (1960), The Shoes of the Fisherman (1968), Sleuth (1972), Marathon Man (1976) and The Boys from Bra\n\n---\n\nTITLE: Nicholas Ray\nSummary: Nicholas Ray (born Raymond Nicholas Kienzle Jr., August 7, 1911 – June 16, 1979) was an American film director, screenwriter, and actor. Described by the Harvard Film Archive as \"Hollywood's last romantic\" and \"one of postwar American cinema's supremely gifted and ultimately tragic filmmakers,\" Ray was considered an iconoclastic auteur director who often clashed with the Hollywood studio system of the time, but would prove highly influential to future generations of filmmakers.\nHis best-known work is the 1955 film Rebel Without a Cause, starring James Dean. He is appreciated for many narrative features produced between 1947 and 1963, including They Live By Night (1948), In a Lonely Place (1950), Johnny Guitar (1954), Bigger Than Life (1956), and King of Kings (1961), as well as an experimental work produced throughout the 1970s titled We Can't Go Home Again, which was unfinished at the time of Ray's death.\nDuring his lifetime, Ray was nominated for the Academy Award for Best Story for Rebel Without a Cause, twice for the Golden Lion, for Bigger Than Life (1956) and Bitter Victory (1957), and a Palme d'Or for The Savage Innocents (1960). Three of his films were ranked by Cahiers du Cinéma in their Annual Top 10 Lists.\nRay's compositions within the CinemaScope frame and use of color are particularly well regarded and he was an important influence on the French New Wave, with Jean-Luc Godard famously writing in a review of Bitter Victory, \"... there is cinema. And the cinema is Nicholas Ray.\"\n\n---\n\nTITLE: James Dean\nSummary: James Byron Dean (February 8, 1931 – September 30, 1955) was an American actor. He became one of the most influential figures in Hollywood in the 1950s, and his impact on cinema and popular culture was profound, although his career lasted only five years. He appeared in just three major films: Rebel Without a Cause (1955), in which he portrayed a disillusioned and rebellious teenager, East of Eden (1955), which showcased his ",
+        "reasoning": "Nicholas Ray is described as \"an American film director, screenwriter, and actor.\" Elia Kazan is well known as a film and theater director. The profession they share in common is film director.",
+        "answer": "Film director"
+      },
+      {
+        "augmented": true,
+        "question": " Teri W. Odom is a member of a scientific journal first published in 2007 by who?",
+        "context": "TITLE:  Teri W. Odom is a member of a scientific journal first published in 2007 by who?\nNo good Wikipedia Search Result was found",
+        "reasoning": "Teri W. Odom is a prominent nanoscientist and professor at Northwestern University. She is known to be an associate editor or editorial advisory board member of the journal *ACS Nano*, which is a scientific journal first published in 2007 by the American Chemical Society (ACS).",
+        "answer": "American Chemical Society"
+      },
+      {
+        "question": "What U.S Highway gives access to Zilpo Road, and is also known as Midland Trail?",
+        "context": "TITLE: What U.S Highway gives access to Zilpo Road, and is also known as Midland Trail?\nNo good Wikipedia Search Result was found",
+        "answer": "US 60"
+      },
+      {
+        "question": "Which English actor of stage, film and television from the 1978 BBC drama \"Pennies From Heaven\" appeared in the 2006 BBC Four television play \"Kenneth Williams: Fantabulosa!?\"",
+        "context": "TITLE: Which English actor of stage, film and television from the 1978 BBC drama \"Pennies From Heaven\" appeared in the 2006 BBC Four television play \"Kenneth Williams: Fantabulosa!?\"\nNo good Wikipedia Search Result was found\n\n---\n\nTITLE: Pennies from Heaven (1981 film)\nSummary: Pennies from Heaven is a 1981 American musical romantic drama film directed by Herbert Ross, based on the 1978 BBC television drama. Dennis Potter adapted his screenplay from the BBC series for American audiences, changing its setting from London and the Forest of Dean to Depression-era Chicago and rural Illinois.\nThe film stars Steve Martin, Bernadette Peters, Christopher Walken and Jessica Harper. Choreographed by Danny Daniels, the film includes musical numbers consisting of actors lip-syncing and dancing to popular songs of the 1920s–30s, such as \"Let's Misbehave\", \"Life Is Just a Bowl of Cherries\", \"Let's Face the Music and Dance\" and the title song.\nWhile positively received by critics, it was a box office bomb, grossing just a fraction of its budget. It received 3 nominations at the 54th Academy Awards, but didn't win any of them.\n\n---\n\nTITLE: Pennies from Heaven (song)\nSummary: \"Pennies from Heaven\" is a 1936 American popular song  with music by Arthur Johnston and lyrics by Johnny Burke. It was introduced by Bing Crosby with Georgie Stoll and his Orchestra in the 1936 film of the same name.\n\n---\n\nTITLE: Pennies from Heaven (TV series)\nSummary: Pennies from Heaven is a 1978 BBC musical drama serial written by Dennis Potter. The title is taken from the song \"Pennies from Heaven\" written by Johnny Burke and Arthur Johnston. It was one of several Potter serials (another being The Singing Detective) to mix the reality of the drama with a dark fantasy content, and the earliest of his works where the characters burst into extended performances of popular songs.",
+        "answer": "Cheryl Campbell"
+      }
+    ],
+    "signature": {
+      "instructions": "Solve a multi-hop Wikipedia bridge question with chain-of-thought.",
+      "fields": [
+        {
+          "prefix": "Question:",
+          "description": "Multi-hop factual question"
+        },
+        {
+          "prefix": "Context:",
+          "description": "Retrieved Wikipedia passages"
+        },
+        {
+          "prefix": "Reasoning:",
+          "description": "Chain-of-thought: Entity1 -> bridge -> Entity2"
+        },
+        {
+          "prefix": "Answer:",
+          "description": "Concise final answer (1-5 words)"
+        }
+      ]
+    },
+    "lm": null
+  },
+  "metadata": {
+    "dependency_versions": {
+      "python": "3.10",
+      "dspy": "3.1.3",
+      "cloudpickle": "3.1"
+    }
+  }
+}

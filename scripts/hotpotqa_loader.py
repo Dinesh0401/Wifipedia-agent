@@ -14,9 +14,32 @@ from scripts.config import cfg
 logger = logging.getLogger(__name__)
 
 
+def _is_single_hop(sample: Dict[str, Any]) -> bool:
+    """Return True if the sample is approximately single-hop.
+
+    HotpotQA distractor setting always has 2 gold articles, so true
+    single-article questions are extremely rare. We use 'easy' level
+    and 'comparison' type as proxies for simpler (single-hop-like) questions.
+    """
+    # Truly single-hop: only one unique supporting-fact title
+    sf = sample.get("supporting_facts", [])
+    if sf:
+        unique_titles = set(sf_item[0] for sf_item in sf)
+        if len(unique_titles) == 1:
+            return True
+    # Easy-level questions require the simplest reasoning
+    if sample.get("level", "") == "easy":
+        return True
+    # Comparison questions are single-reasoning-step
+    if sample.get("type", "") == "comparison":
+        return True
+    return False
+
+
 class HotpotQALoader:
     """
     Loads HotpotQA from official JSON files or HuggingFace.
+    Filters for single-hop questions (only 1 supporting-fact title).
 
     Priority:
       1. Local hotpot_train_v1.1.json / hotpot_dev_distractor_v1.json
@@ -29,11 +52,21 @@ class HotpotQALoader:
 
     def load_train(self, max_samples: int = None) -> List[Dict[str, Any]]:
         limit = max_samples or cfg.max_train_samples
-        return self._load_split(cfg.hotpot_train_file, "train", limit)
+        # Load a larger pool to have enough after single-hop filtering
+        pool_size = max(limit * 20, 5000)
+        samples = self._load_split(cfg.hotpot_train_file, "train", pool_size)
+        samples = [s for s in samples if _is_single_hop(s)]
+        logger.info(f"Single-hop filter: {len(samples)} candidates from pool of {pool_size}")
+        return samples[:limit]
 
     def load_test(self, max_samples: int = None) -> List[Dict[str, Any]]:
         limit = max_samples or cfg.max_test_samples
-        return self._load_split(cfg.hotpot_dev_file, "validation", limit)
+        # Load a larger pool to have enough after single-hop filtering
+        pool_size = max(limit * 20, 5000)
+        samples = self._load_split(cfg.hotpot_dev_file, "validation", pool_size)
+        samples = [s for s in samples if _is_single_hop(s)]
+        logger.info(f"Single-hop filter: {len(samples)} candidates from pool of {pool_size}")
+        return samples[:limit]
 
     def load_train_test(
         self,

@@ -13,9 +13,9 @@ from datetime import datetime
 from typing import List, Dict, Any
 
 import dspy
-import numpy as np
 
-from scripts.metrics import token_precision_recall_f1, f1_score, compute_metrics, print_metrics
+from scripts.llm_judge import LLMJudge
+from scripts.metrics import compute_metrics, print_metrics
 from scripts.hotpotqa_loader import HotpotQALoader
 from scripts.wiki_retriever import WikipediaRetriever
 from scripts.dspy_adapter import configure_dspy
@@ -27,26 +27,33 @@ logger = logging.getLogger(__name__)
 # -- DSPy signatures --------------------------------------------------------
 
 class BridgeQA(dspy.Signature):
-    """Answer a multi-hop Wikipedia bridge question given retrieved context."""
-    question = dspy.InputField(desc="A multi-hop factual question")
+    """Answer a Wikipedia factual question given retrieved context."""
+    question = dspy.InputField(desc="A factual question")
     context = dspy.InputField(desc="Retrieved Wikipedia passages (may contain distractors)")
     answer = dspy.OutputField(desc="Short factual answer (1-5 words)")
 
 
 class BridgeQAWithReasoning(dspy.Signature):
-    """Solve a multi-hop Wikipedia bridge question with chain-of-thought."""
-    question = dspy.InputField(desc="Multi-hop factual question")
+    """Solve a Wikipedia factual question with chain-of-thought."""
+    question = dspy.InputField(desc="Factual question")
     context = dspy.InputField(desc="Retrieved Wikipedia passages")
-    reasoning = dspy.OutputField(desc="Chain-of-thought: Entity1 -> bridge -> Entity2")
+    reasoning = dspy.OutputField(desc="Chain-of-thought reasoning to the answer")
     answer = dspy.OutputField(desc="Concise final answer (1-5 words)")
 
 
-# -- HotpotQA metric for DSPy -----------------------------------------------
+# -- HotpotQA metric for DSPy (LLM-as-a-Judge) --------------------------------
+
+_judge = LLMJudge()
 
 def hotpotqa_metric(example: dspy.Example, pred, trace=None) -> float:
     gold = example.answer
     pred_ans = getattr(pred, "answer", "") or ""
-    return f1_score(pred_ans, gold)
+    result = _judge.judge_sync(
+        question=example.question,
+        gold_answer=gold,
+        prediction=pred_ans,
+    )
+    return 1.0 if result["correct"] else 0.0
 
 
 # -- MIPROv2 Optimizer -------------------------------------------------------
@@ -137,15 +144,11 @@ class MIPROv2Optimizer:
             val_metrics = self._evaluate_program(optimized, val_dspy)
             print_metrics(val_metrics)
             summary_metrics = {
-                "precision_mean": val_metrics["precision_mean"],
-                "precision_min": val_metrics["precision_min"],
-                "precision_max": val_metrics["precision_max"],
-                "recall_mean": val_metrics["recall_mean"],
-                "recall_min": val_metrics["recall_min"],
-                "recall_max": val_metrics["recall_max"],
-                "f1_mean": val_metrics["f1_mean"],
-                "f1_min": val_metrics["f1_min"],
-                "f1_max": val_metrics["f1_max"],
+                "yes_count": val_metrics["yes_count"],
+                "no_count": val_metrics["no_count"],
+                "accuracy": val_metrics["accuracy"],
+                "accuracy_pct": val_metrics["accuracy_pct"],
+                "wilson_ci95": val_metrics["wilson_ci95"],
             }
 
         return {
@@ -158,16 +161,70 @@ class MIPROv2Optimizer:
     def _evaluate_program(
         program, examples: List[dspy.Example]
     ) -> Dict[str, Any]:
+        judge = LLMJudge()
         records = []
         for ex in examples:
             try:
                 pred = program(question=ex.question, context=ex.context)
-                prec, rec, f1 = token_precision_recall_f1(pred.answer, ex.answer)
-                records.append({"precision": prec, "recall": rec, "f1": f1})
+                result = judge.judge_sync(
+                    question=ex.question,
+                    gold_answer=ex.answer,
+                    prediction=pred.answer,
+                )
+                records.append({
+                    "judge_correct": result["correct"],
+                })
             except Exception as e:
                 logger.warning(f"Evaluation step failed: {e}")
-                records.append({"precision": 0.0, "recall": 0.0, "f1": 0.0})
+                records.append({"judge_correct": False})
         return compute_metrics(records, split="val")
+
+    def evaluate_test_set(
+        self, program_path: str, test_samples: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """Evaluate optimized program on full test set. Returns list of record dicts."""
+        logger.info(f"Loading optimized program from {program_path} ...")
+        program = self._make_program()
+        program.load(program_path)
+
+        logger.info(f"Preparing {len(test_samples)} test examples for MIPROv2 eval ...")
+        test_dspy = self._to_dspy_examples(test_samples)
+
+        judge = LLMJudge()
+        records = []
+        for i, ex in enumerate(test_dspy):
+            try:
+                pred = program(question=ex.question, context=ex.context)
+                result = judge.judge_sync(
+                    question=ex.question,
+                    gold_answer=ex.answer,
+                    prediction=pred.answer,
+                )
+                records.append({
+                    "question": ex.question,
+                    "prediction": pred.answer,
+                    "gold_answer": ex.answer,
+                    "correct": result["correct"],
+                })
+                logger.info(f"[MIPROv2 eval {i+1}/{len(test_dspy)}] correct={result['correct']}")
+            except Exception as e:
+                logger.warning(f"[MIPROv2 eval {i+1}] failed: {e}")
+                records.append({
+                    "question": ex.question,
+                    "prediction": "UNKNOWN",
+                    "gold_answer": ex.answer,
+                    "correct": False,
+                })
+
+        # Save predictions JSONL so MIPROv2 results are recoverable
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        jsonl_path = cfg.output_dir / f"hotpotqa_miprov2_{timestamp}_predictions.jsonl"
+        with open(jsonl_path, "w", encoding="utf-8") as f:
+            for rec in records:
+                f.write(json.dumps(rec, default=str) + "\n")
+        logger.info(f"MIPROv2 predictions saved -> {jsonl_path}")
+
+        return records
 
 
 def main():
@@ -182,9 +239,8 @@ def main():
     print(f"  Saved to : {result['optimized_program_path']}")
     if result["summary_metrics"]:
         m = result["summary_metrics"]
-        print(f"  Val Precision : {m['precision_mean']}")
-        print(f"  Val Recall    : {m['recall_mean']}")
-        print(f"  Val F1        : {m['f1_mean']}")
+        print(f"  Val Accuracy : {m['accuracy_pct']}  CI95 {m['wilson_ci95']}")
+        print(f"  Yes/No       : {m['yes_count']}/{m['no_count']}")
 
 
 if __name__ == "__main__":

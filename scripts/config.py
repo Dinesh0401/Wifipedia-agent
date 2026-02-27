@@ -24,6 +24,10 @@ class PipelineConfig:
     anthropic_api_key: str   = field(default_factory=lambda: os.getenv("ANTHROPIC_API_KEY", ""))
     openrouter_api_key: str  = field(default_factory=lambda: os.getenv("OPENROUTER_API_KEY", ""))
 
+    # -- Judge API (separate LLMControls endpoint for LLM-as-a-Judge) ---------
+    judge_api_key: str       = field(default_factory=lambda: os.getenv("JUDGE_API_KEY", ""))
+    judge_api_url: str       = field(default_factory=lambda: os.getenv("JUDGE_API_URL", ""))
+
     # -- Active model (set via --model CLI flag or env) ----------------------
     active_model: str = field(default_factory=lambda: os.getenv("ACTIVE_MODEL", "llmcontrols"))
 
