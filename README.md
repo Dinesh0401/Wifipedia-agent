@@ -1,5 +1,5 @@
 <p align="center">
-  <h1 align="center">Wifipedia-agent</h1>
+  <h1 align="center">WikiQA-Bench</h1>
   <p align="center">
     <strong>MIPROv2 + ACE Research Pipeline for HotpotQA with LLM-as-a-Judge Evaluation</strong>
   </p>
@@ -34,7 +34,7 @@
 
 ## About
 
-**Wifipedia-agent** is a research-grade benchmark system that evaluates LLM-powered Wikipedia retrieval agents on the [HotpotQA](https://hotpotqa.github.io/) dataset. It implements a three-stage evaluation pipeline:
+**WikiQA-Bench** is a research-grade benchmark system that evaluates LLM-powered Wikipedia retrieval agents on the [HotpotQA](https://hotpotqa.github.io/) dataset. It implements a three-stage evaluation pipeline:
 
 1. **MIPROv2** — Automated prompt optimization via [DSPy](https://github.com/stanfordnlp/dspy)
 2. **ACE Offline** — Single-pass faithfulness and accuracy evaluation
