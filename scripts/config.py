@@ -37,8 +37,8 @@ class PipelineConfig:
     model_name: str         = field(default_factory=lambda: os.getenv("MODEL_NAME", "gpt-4o-mini"))
 
     # -- Retrieval -----------------------------------------------------------
-    wiki_top_k: int       = 3
-    wiki_chars_max: int   = 2000
+    wiki_top_k: int       = 15
+    wiki_chars_max: int   = 4000
     temperature: float    = 0.0
 
     # -- Dataset -------------------------------------------------------------
@@ -52,10 +52,10 @@ class PipelineConfig:
     miprov2_max_bootstrapped: int  = 4
     miprov2_max_labeled: int       = 4
     miprov2_num_candidates: int    = 8
-    miprov2_auto: str              = "medium"
+    miprov2_auto: str              = "heavy"
 
     # -- ACE -----------------------------------------------------------------
-    ace_max_reflections: int   = 3
+    ace_max_reflections: int   = 5
     ace_online_mode: bool      = False
 
     # -- Paths ---------------------------------------------------------------

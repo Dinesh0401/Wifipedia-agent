@@ -46,14 +46,18 @@ class BridgeQAWithReasoning(dspy.Signature):
 _judge = LLMJudge()
 
 def hotpotqa_metric(example: dspy.Example, pred, trace=None) -> float:
-    gold = example.answer
-    pred_ans = getattr(pred, "answer", "") or ""
-    result = _judge.judge_sync(
-        question=example.question,
-        gold_answer=gold,
-        prediction=pred_ans,
-    )
-    return 1.0 if result["correct"] else 0.0
+    try:
+        gold = example.answer
+        pred_ans = getattr(pred, "answer", "") or ""
+        result = _judge.judge_sync(
+            question=example.question,
+            gold_answer=gold,
+            prediction=pred_ans,
+        )
+        return float(result.get("score", 0.0))
+    except Exception:
+        logger.exception("LLM judge failed in hotpotqa_metric")
+        return 0.0
 
 
 # -- MIPROv2 Optimizer -------------------------------------------------------
@@ -109,10 +113,9 @@ class MIPROv2Optimizer:
         try:
             teleprompter = dspy.MIPROv2(
                 metric=hotpotqa_metric,
-                auto=cfg.miprov2_auto,
-                max_bootstrapped_demos=cfg.miprov2_max_bootstrapped,
-                max_labeled_demos=cfg.miprov2_max_labeled,
-                num_candidates=cfg.miprov2_num_candidates,
+                auto="heavy",
+                max_bootstrapped_demos=4,
+                max_labeled_demos=4,
                 verbose=True,
             )
             optimized = teleprompter.compile(
@@ -120,18 +123,9 @@ class MIPROv2Optimizer:
                 trainset=train_dspy,
                 valset=val_dspy,
             )
-        except Exception as e:
-            logger.warning(
-                f"MIPROv2 full compile failed ({e}). "
-                "Falling back to BootstrapFewShotWithRandomSearch."
-            )
-            teleprompter = dspy.BootstrapFewShotWithRandomSearch(
-                metric=hotpotqa_metric,
-                max_bootstrapped_demos=cfg.miprov2_max_bootstrapped,
-                max_labeled_demos=cfg.miprov2_max_labeled,
-                num_candidate_programs=cfg.miprov2_num_candidates,
-            )
-            optimized = teleprompter.compile(program, trainset=train_dspy)
+        except Exception:
+            logger.exception("MIPROv2 teleprompter failed")
+            raise
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         out_path = cfg.opt_dir / f"hotpotqa_miprov2_{timestamp}.json"

@@ -17,31 +17,25 @@ logger = logging.getLogger(__name__)
 
 class LLMJudge:
 
-    PROMPT = """You are evaluating a question-answering system.
+    PROMPT = """You are a strict but fair answer evaluator.
 
-Question:
-{question}
+Question: {question}
+Gold Answer: {gold_answer}
+Predicted Answer: {prediction}
 
-Gold Answer:
-{gold_answer}
-
-Predicted Answer:
-{prediction}
-
-Is the predicted answer semantically correct?
-
-Rules:
-- Paraphrases count as correct.
-- Minor formatting differences count as correct.
-- If UNKNOWN or clearly wrong, answer No.
+Evaluation rules:
+- Exact match -> correct = true, score = 1.0
+- Valid paraphrase or abbreviation -> correct = true, score = 0.9
+- Same entity different format (e.g. "New York" vs "NYC") -> correct = true, score = 0.95
+- Partially correct (right topic, wrong detail) -> correct = false, score = 0.4
+- Wrong or unrelated -> correct = false, score = 0.0
 
 Return ONLY valid JSON:
-
-{{
-  "verdict": "Yes" or "No",
-  "reasoning": "one short sentence"
-}}
-"""
+{
+    "correct": true or false,
+    "score": 0.0 to 1.0,
+    "reasoning": "one sentence"
+}"""
 
     def __init__(self):
         # Judge uses a separate LLMControls endpoint (different from task model)
@@ -63,47 +57,32 @@ Return ONLY valid JSON:
         try:
             match = re.search(r"\{.*\}", raw, re.DOTALL)
             result = json.loads(match.group())
-            verdict = str(result.get("verdict", "No")).strip()
-            correct = verdict.lower() == "yes"
+            correct = bool(result.get("correct", False))
+            score = float(result.get("score", 0.0))
             return {
                 "verdict": "Yes" if correct else "No",
                 "correct": correct,
+                "score": score,
                 "reasoning": result.get("reasoning", ""),
             }
-
         except Exception:
             logger.warning(f"LLM judge parse error. Raw: {raw[:200]}")
             return {
                 "verdict": "No",
                 "correct": False,
+                "score": 0.0,
                 "reasoning": "parse_error",
             }
 
     def judge_sync(self, question: str, gold_answer: str, prediction: str) -> dict:
         """Blocking wrapper for use in DSPy metrics and other sync contexts."""
-        prompt = self.PROMPT.format(
-            question=question,
-            gold_answer=gold_answer,
-            prediction=prediction,
-        )
-
-        raw = self.client.generate_sync(prompt, temperature=0.0)
-
+        import asyncio
         try:
-            match = re.search(r"\{.*\}", raw, re.DOTALL)
-            result = json.loads(match.group())
-            verdict = str(result.get("verdict", "No")).strip()
-            correct = verdict.lower() == "yes"
-            return {
-                "verdict": "Yes" if correct else "No",
-                "correct": correct,
-                "reasoning": result.get("reasoning", ""),
-            }
-
+            import nest_asyncio
+            nest_asyncio.apply()
         except Exception:
-            logger.warning(f"LLM judge parse error. Raw: {raw[:200]}")
-            return {
-                "verdict": "No",
-                "correct": False,
-                "reasoning": "parse_error",
-            }
+            pass
+        loop = asyncio.get_event_loop()
+        return loop.run_until_complete(
+            self.judge(question, gold_answer, prediction)
+        )

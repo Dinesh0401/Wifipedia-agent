@@ -25,7 +25,7 @@ class UnifiedLLMClient:
       - deepseek:    OpenRouter OpenAI-compatible API (https://openrouter.ai/api/v1)
     """
 
-    def __init__(self, max_retries: int = 3, retry_delay: float = 2.0,
+    def __init__(self, max_retries: int = 6, retry_delay: float = 3.0,
                  model_override: str = None, backend_override: str = None,
                  api_key_override: str = None, api_url_override: str = None):
         self.max_retries = max_retries
@@ -36,7 +36,7 @@ class UnifiedLLMClient:
         self.api_url_override = api_url_override
 
     # -- Core async generate ---------------------------------------------------
-    async def generate(self, prompt: str, timeout: int = 60, temperature: float = None) -> str:
+    async def generate(self, prompt: str, timeout: int = 90, temperature: float = None) -> str:
         # Determine backend: explicit override > model_override (implies claude) > config
         if self.backend_override:
             backend = self.backend_override

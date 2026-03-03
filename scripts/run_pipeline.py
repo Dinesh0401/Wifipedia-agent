@@ -56,6 +56,8 @@ def parse_args():
         help="LLM backend to use (overrides ACTIVE_MODEL env var)",
     )
     p.add_argument("--no-mipro", action="store_true", help="Skip MIPROv2")
+    p.add_argument("--opt", type=str, default=None,
+                   help="Path to a pre-trained optimized program JSON (for ACE without re-running MIPROv2)")
     return p.parse_args()
 
 
@@ -130,6 +132,10 @@ async def run_smoke():
         print(f"Judge     : verdict={r['metrics']['judge_verdict']} correct={r['metrics']['judge_correct']}")
         print(f"Reasoning : {r['metrics']['judge_reasoning']}")
         print()
+
+    # -- Retrieval recall --
+    recall = sum(r["retrieval"]["recall_hit"] for r in results) / len(results) if results else 0
+    print(f"Retrieval Recall: {recall*100:.1f}%")
     logger.info("Smoke test complete")
 
 
@@ -150,25 +156,12 @@ def _format_verdict_grid(verdicts, cols=5):
     return "\n".join(lines)
 
 
-def _format_per_question(records):
-    """Format per-question details: Ques / Ans / Expected Ans / Correct."""
-    lines = []
-    for i, rec in enumerate(records):
-        num = i + 1
-        verdict = "YES" if rec["correct"] else "NO"
-        lines.append(f"Q{num:03d}")
-        lines.append(f"Ques:         {rec['question']}")
-        lines.append(f"Ans:          {rec['prediction']}")
-        lines.append(f"Expected Ans: {rec['gold_answer']}")
-        lines.append(f"Correct:      {verdict}")
-        lines.append("-" * 80)
-    return "\n".join(lines)
-
-
 def generate_results_txt(
     miprov2_records,
     ace_offline_records,
     ace_online_records,
+    ace_offline_faithful,
+    ace_online_faithful,
     n_samples,
 ):
     """Generate the formatted pipeline results with per-question Ques/Ans/Expected Ans/Correct."""
@@ -176,18 +169,25 @@ def generate_results_txt(
     EQ = "=" * W
     HEAVY = "\u2501" * W  # ━
 
-    def _stage_section(title, records):
+    def _stage_section(title, records, faithful=None):
         blk = []
         blk.append(HEAVY)
         blk.append(f"  {title}  (N={len(records)})")
         blk.append(HEAVY)
         blk.append("")
-        blk.append(_format_per_question(records))
+        blk.append(_format_verdict_grid([r["correct"] for r in records]))
         blk.append("")
         yes = sum(1 for r in records if r["correct"])
         no = len(records) - yes
         acc = yes / len(records) * 100 if records else 0
         blk.append(f"  Accuracy: {acc:.1f}%  (YES: {yes}  NO: {no})")
+        if faithful is not None:
+            faithful_yes = sum(1 for f in faithful if f)
+            faithful_no = len(faithful) - faithful_yes
+            faithful_pct = faithful_yes / len(faithful) * 100 if faithful else 0
+            blk.append(
+                f"  Faithfulness: {faithful_pct:.1f}%  (TRUE: {faithful_yes}  FALSE: {faithful_no})"
+            )
         blk.append("")
         return "\n".join(blk)
 
@@ -204,9 +204,17 @@ def generate_results_txt(
 
     out.append(_stage_section("STAGE 1 \u2014 MIPROv2", miprov2_records))
     out.append("")
-    out.append(_stage_section("STAGE 2 \u2014 ACE OFFLINE", ace_offline_records))
+    out.append(_stage_section(
+        "STAGE 2 \u2014 ACE OFFLINE",
+        ace_offline_records,
+        ace_offline_faithful,
+    ))
     out.append("")
-    out.append(_stage_section("STAGE 3 \u2014 ACE ONLINE", ace_online_records))
+    out.append(_stage_section(
+        "STAGE 3 \u2014 ACE ONLINE",
+        ace_online_records,
+        ace_online_faithful,
+    ))
     out.append("")
 
     out.append(EQ)
@@ -215,19 +223,24 @@ def generate_results_txt(
     out.append("")
 
     DASH = "\u2500" * 60  # ─
-    out.append(f"  {'Stage':<16s}{'N':>3s}    {'YES':>4s}  {'NO':>4s}  {'Accuracy':>10s}")
+    out.append(f"  {'Stage':<16s}{'N':>3s}    {'YES':>4s}  {'NO':>4s}  {'Accuracy':>10s}  {'Faith':>7s}")
     out.append(f"  {DASH}")
 
-    for name, records in [
-        ("MIPROv2", miprov2_records),
-        ("ACE Offline", ace_offline_records),
-        ("ACE Online", ace_online_records),
+    for name, records, faithful in [
+        ("MIPROv2", miprov2_records, None),
+        ("ACE Offline", ace_offline_records, ace_offline_faithful),
+        ("ACE Online", ace_online_records, ace_online_faithful),
     ]:
         yes = sum(1 for r in records if r["correct"])
         no = len(records) - yes
         acc = f"{yes / len(records) * 100:.1f}%" if records else "0.0%"
+        if faithful is None:
+            faith_str = "-"
+        else:
+            faith_yes = sum(1 for f in faithful if f)
+            faith_str = f"{faith_yes / len(faithful) * 100:.1f}%" if faithful else "0.0%"
         out.append(
-            f"  {name:<16s}{len(records):>3d}    {yes:>4d}  {no:>4d}   {acc:>8s}"
+            f"  {name:<16s}{len(records):>3d}    {yes:>4d}  {no:>4d}   {acc:>8s}  {faith_str:>7s}"
         )
 
     out.append(f"  {DASH}")
@@ -258,7 +271,7 @@ async def main_async(args):
     val_data = test_data[: min(20, len(test_data))]
 
     results = {}
-    optimized_program_path = None
+    optimized_program_path = args.opt  # use --opt if provided
     miprov2_records = []
 
     # MIPROv2 — run in thread pool to avoid blocking the event loop
@@ -289,15 +302,42 @@ async def main_async(args):
     # -- Collect per-sample records ----
     ace_offline_records = results.get("ace_offline", {}).get("per_sample_records", [])
     ace_online_records = results.get("ace_online", {}).get("per_sample_records", [])
+    ace_offline_faithful = results.get("ace_offline", {}).get("per_sample_faithful", [])
+    ace_online_faithful = results.get("ace_online", {}).get("per_sample_faithful", [])
 
     n_samples = len(test_data)
 
     # -- Generate formatted TXT output ----
+    # Compute ablation metrics
+    retrieval_recall = 0.0  # Only available in smoke test; placeholder for full runs
+    miprov2_acc = 0.0
+    offline_acc = 0.0
+    online_acc = 0.0
+
+    if miprov2_records:
+        miprov2_acc = sum(1 for r in miprov2_records if r["correct"]) / len(miprov2_records) * 100
+    if ace_offline_records:
+        offline_acc = sum(1 for r in ace_offline_records if r["correct"]) / len(ace_offline_records) * 100
+    if ace_online_records:
+        online_acc = sum(1 for r in ace_online_records if r["correct"]) / len(ace_online_records) * 100
+
+    # -- Ablation Table --
+    print("\n" + "="*60)
+    print("  ABLATION TABLE")
+    print("="*60)
+    print(f"  Retrieval Recall     : N/A (run smoke test)")
+    print(f"  MIPROv2  (val N={len(miprov2_records) if miprov2_records else 0})  : {miprov2_acc:.1f}%")
+    print(f"  ACE Offline (N={len(ace_offline_records)})  : {offline_acc:.1f}%")
+    print(f"  ACE Online  (N={len(ace_online_records)})  : {online_acc:.1f}%")
+    print("="*60)
+
     if miprov2_records and ace_offline_records and ace_online_records:
         txt_output = generate_results_txt(
             miprov2_records=miprov2_records,
             ace_offline_records=ace_offline_records,
             ace_online_records=ace_online_records,
+            ace_offline_faithful=ace_offline_faithful,
+            ace_online_faithful=ace_online_faithful,
             n_samples=n_samples,
         )
 
@@ -305,7 +345,7 @@ async def main_async(args):
         results_dir = Path(cfg.output_dir).parent / "results"
         results_dir.mkdir(exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        txt_path = results_dir / f"pipeline_results_singlehop_{timestamp}.txt"
+        txt_path = results_dir / f"pipeline_results_{timestamp}.txt"
         with open(txt_path, "w", encoding="utf-8") as f:
             f.write(txt_output)
 

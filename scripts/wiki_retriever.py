@@ -70,7 +70,7 @@ class WikipediaRetriever:
 
     # -- Context builder -----------------------------------------------------
     @staticmethod
-    def build_context(docs: List[Dict[str, Any]], max_chars: int = 4000) -> str:
+    def build_context(docs: List[Dict[str, Any]], max_chars: int = 12000) -> str:
         parts = []
         total = 0
         for doc in docs:
@@ -86,11 +86,24 @@ class WikipediaRetriever:
     # -- Private helpers -----------------------------------------------------
     def _build_queries(self, question: str) -> List[str]:
         queries = [question]
+        # Quoted terms
+        quoted = re.findall(r'"([^"]+)"', question)
+        queries.extend(quoted)
+        # Named entities
         entities = self._extract_entities(question)
-        for e in entities[:2]:
-            if e.lower() not in question.lower()[:20]:
-                queries.append(e)
-        return queries
+        queries.extend(entities[:3])
+        # Question-type expansion
+        q_lower = question.lower()
+        if "first" in q_lower or "earlier" in q_lower or "older" in q_lower:
+            queries.append(
+                question.replace("first", "founded").replace("earlier", "established")
+            )
+        if "born" in q_lower:
+            entities_born = self._extract_entities(question)
+            for e in entities_born[:2]:
+                queries.append(f"{e} biography birthplace")
+        seen = set()
+        return [q for q in queries if not (q in seen or seen.add(q))]
 
     @staticmethod
     def _extract_entities(text: str) -> List[str]:
