@@ -141,8 +141,8 @@ Full per-question results with predictions, expected answers, and verdicts are a
 
 ```bash
 # Clone the repository
-git clone https://github.com/Dinesh0401/Wifipedia-agent.git
-cd Wifipedia-agent
+git clone https://github.com/Dinesh0401/WikiQA-Bench.git
+cd WikiQA-Bench
 
 # Create virtual environment
 python -m venv .venv
@@ -229,7 +229,7 @@ ace:
 ## Project Structure
 
 ```
-Wifipedia-agent/
+WikiQA-Bench/
 ├── benchmarks/
 │   └── tasks/
 │       └── hotpotqa.yaml           # Benchmark task configuration
@@ -246,7 +246,9 @@ Wifipedia-agent/
 │   ├── hotpotqa_loader.py          # HotpotQA dataset loader & splitter
 │   ├── metrics.py                  # Accuracy + Wilson CI computation
 │   ├── dspy_adapter.py             # DSPy integration helpers
-│   └── dspy_llmcontrols.py         # DSPy ↔ LLMControls bridge
+│   ├── dspy_llmcontrols.py         # DSPy ↔ LLMControls bridge
+│   ├── regen_miprov2_preds.py      # Regenerate MIPROv2 predictions
+│   └── regen_report.py             # Regenerate pipeline reports
 ├── optimized_programs/             # Serialized MIPROv2 optimized programs
 ├── research_outputs/               # Predictions (JSONL), summaries, reports
 ├── results/                        # Final pipeline result snapshots
